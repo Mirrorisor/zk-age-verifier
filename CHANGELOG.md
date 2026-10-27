@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fork only: the `untrusted_issuer` log line now carries the refused certificate as `der_base64`, and `--check-cert` also reads base64-DER text, so a failed check can be explained offline by pasting the logged value into a file. A test builds a certificate with serial number 0 (like the Multipaz TEST IACA) and fails if a `cryptography` upgrade stops loading such anchors.
 - Fork only: `--check-cert CERT` tests a PEM or DER certificate against the configured trust anchors and prints each check (validity, keyUsage, key type, which anchor signed it) and a TRUSTED / NOT TRUSTED verdict, without starting the service.
 - Fork only: an `etsi_xml` trust source skips services whose status is not `granted` or `recognisedatnationallevel`, and accepts an optional `etsi_xml_sha256` that refuses a list with different content. Without the pin, the service logs `etsi_xml_not_pinned` with the digest ([#76](https://github.com/pipe23-org/zk-age-verifier/issues/76)).
 - Fork only: an `etsi_xml` trust source now takes only certificates listed under a service's `ServiceDigitalIdentity`. Before, every certificate in the file became an anchor, including the list's own signer and past service versions. The list's signature is still not verified ([#76](https://github.com/pipe23-org/zk-age-verifier/issues/76)).

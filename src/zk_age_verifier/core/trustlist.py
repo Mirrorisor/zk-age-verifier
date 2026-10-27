@@ -27,6 +27,7 @@ from cryptography import x509
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.serialization import Encoding
 
 from zk_age_verifier.config import ConfigError, TrustSource
 
@@ -156,7 +157,10 @@ def explain_certificate(anchors: AnchorSet, cert: x509.Certificate) -> tuple[boo
 
 
 def read_certificate(path: str) -> x509.Certificate:
-    """Read one certificate from a PEM or DER file (the first one, for a PEM bundle).
+    """Read one certificate from a PEM, DER or base64-DER text file.
+
+    A PEM bundle yields its first certificate. Base64-DER is the ``der_base64`` value
+    of an ``untrusted_issuer`` log line pasted into a file.
 
     Raises:
         ConfigError: The file cannot be read or holds no certificate.
@@ -171,8 +175,13 @@ def read_certificate(path: str) -> x509.Certificate:
         pass
     try:
         return x509.load_der_x509_certificate(data)
-    except ValueError as exc:
-        raise ConfigError(f"{path} does not contain a PEM or DER certificate") from exc
+    except ValueError:
+        pass
+    try:
+        text = b"".join(data.split())
+        return x509.load_der_x509_certificate(base64.b64decode(text, validate=True))
+    except ValueError as exc:  # binascii.Error is a ValueError
+        raise ConfigError(f"{path} does not contain a PEM, DER or base64-DER certificate") from exc
 
 
 def _log_untrusted(cert: x509.Certificate, reason: str) -> None:
@@ -191,6 +200,9 @@ def _log_untrusted(cert: x509.Certificate, reason: str) -> None:
         sha256=cert.fingerprint(hashes.SHA256()).hex(),
         not_before=cert.not_valid_before_utc.isoformat(),
         not_after=cert.not_valid_after_utc.isoformat(),
+        # The whole certificate (public information, shared by every credential the
+        # signer issued), so it can be saved to a file and run through --check-cert.
+        der_base64=base64.b64encode(cert.public_bytes(Encoding.DER)).decode("ascii"),
     )
 
 

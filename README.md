@@ -117,9 +117,11 @@ zero anchors fail startup.
 
 ### Checking why a certificate is not trusted
 
-A failed check says `untrusted-issuer` and the service logs which certificate it refused.
-To test a certificate without a phone or a running service, save it as a PEM or DER file and
-ask the configuration directly:
+A failed check says `untrusted-issuer` and the service logs which certificate it refused,
+including its subject, issuer, fingerprint and the whole certificate as `der_base64`. To test a
+certificate without a phone or a running service, save it as a PEM, DER or base64-DER text
+file (paste the `der_base64` value from the log into a file) and ask the configuration
+directly:
 
 ```
 zk-age-verifier --config config.toml --check-cert document-signer.pem

@@ -157,6 +157,8 @@ def test_untrusted_issuer_logs_presented_certificate() -> None:
     assert event["log_level"] == "warning"
     assert event["subject"] == "CN=stranger"
     assert event["sha256"] == stranger.fingerprint(hashes.SHA256()).hex()
+    # the logged certificate can be turned back into the certificate that was refused
+    assert x509.load_der_x509_certificate(base64.b64decode(event["der_base64"])) == stranger
 
 
 def _report(anchor: x509.Certificate, cert: x509.Certificate) -> tuple[bool, str]:
@@ -240,13 +242,60 @@ def test_read_certificate_reads_pem_and_der(tmp_path: Path) -> None:
     assert read_certificate(str(der)) == cert
 
 
+def test_read_certificate_reads_base64_der_text(tmp_path: Path) -> None:
+    cert = _self_signed()
+    text = tmp_path / "pasted.txt"
+    wrapped = base64.b64encode(cert.public_bytes(Encoding.DER)).decode("ascii")
+    text.write_text("\n".join(wrapped[i : i + 60] for i in range(0, len(wrapped), 60)) + "\n")
+    assert read_certificate(str(text)) == cert
+
+
 def test_read_certificate_rejects_a_missing_or_wrong_file(tmp_path: Path) -> None:
     junk = tmp_path / "junk.txt"
     junk.write_text("not a certificate")
     with pytest.raises(ConfigError, match="cannot read"):
         read_certificate(str(tmp_path / "missing.pem"))
-    with pytest.raises(ConfigError, match="PEM or DER"):
+    with pytest.raises(ConfigError, match="base64-DER"):
         read_certificate(str(junk))
+
+
+def _der(tag: int, body: bytes) -> bytes:
+    """Encode one DER element."""
+    if len(body) < 0x80:
+        return bytes([tag, len(body)]) + body
+    size = len(body).to_bytes((len(body).bit_length() + 7) // 8, "big")
+    return bytes([tag, 0x80 | len(size)]) + size + body
+
+
+def _with_serial_zero(cert: x509.Certificate) -> x509.Certificate:
+    """Rewrite a certificate's serial number to 0, as the Multipaz TEST IACA has.
+
+    The signature no longer verifies, which does not matter: anchors are matched by
+    fingerprint and loaded without checking their own signature.
+    """
+    _, body, _ = trustlist._read_tlv(cert.public_bytes(Encoding.DER), 0)
+    _, tbs, after_tbs = trustlist._read_tlv(body, 0)
+    _, _, after_version = trustlist._read_tlv(tbs, 0)
+    _, _, after_serial = trustlist._read_tlv(tbs, after_version)
+    patched_tbs = tbs[:after_version] + b"\x02\x01\x00" + tbs[after_serial:]
+    return x509.load_der_x509_certificate(
+        _der(0x30, _der(0x30, patched_tbs) + body[after_tbs:])
+    )
+
+
+def test_an_anchor_with_a_non_positive_serial_number_still_loads(tmp_path: Path) -> None:
+    """Tripwire for a cryptography upgrade that starts refusing such certificates.
+
+    The Multipaz TEST IACA, which this service is run with, has serial number 0.
+    cryptography warns today that a future release will raise instead. When this
+    test fails after a dependency bump, that release has arrived: do not merge
+    the bump until anchors like this can be loaded another way.
+    """
+    odd = _with_serial_zero(_self_signed("odd-serial"))
+    assert odd.serial_number == 0
+    pem = tmp_path / "odd.pem"
+    pem.write_bytes(odd.public_bytes(Encoding.PEM))
+    assert len(load_anchors([TrustSource(pem=str(pem))]).anchors) == 1
 
 
 def test_expired_anchor_rejected() -> None:
