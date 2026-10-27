@@ -1,4 +1,5 @@
 import base64
+import hashlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -291,32 +292,43 @@ def _b64_der(cert: x509.Certificate) -> str:
     return base64.b64encode(cert.public_bytes(Encoding.DER)).decode("ascii")
 
 
+_STATUS_BASE = "http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/"
+
+
+def _service_xml(cert: x509.Certificate | None, status: str | None) -> str:
+    """One TSPService; ``cert=None`` gives an empty ``X509Certificate`` element."""
+    status_xml = f"<ServiceStatus>{_STATUS_BASE}{status}</ServiceStatus>" if status else ""
+    certificate = f"\n{_b64_der(cert)}\n" if cert is not None else ""
+    return (
+        "<TSPService><ServiceInformation>"
+        "<ServiceTypeIdentifier>http://example.org/svc</ServiceTypeIdentifier>"
+        f"{status_xml}"
+        "<ServiceDigitalIdentity><DigitalId>"
+        f"<X509Certificate>{certificate}</X509Certificate>"
+        "</DigitalId></ServiceDigitalIdentity>"
+        "</ServiceInformation></TSPService>"
+    )
+
+
 def _etsi_xml(
     *certs: x509.Certificate,
     signer: x509.Certificate | None = None,
     history: x509.Certificate | None = None,
     empty_certificate: bool = False,
+    status: str | None = "granted",
+    other: tuple[x509.Certificate, str | None] | None = None,
 ) -> bytes:
     """Build a minimal trusted list: one service per cert, plus optional decoys.
 
-    ``signer`` is placed where a list's own signature certificate goes,
-    ``history`` where a past service version's goes.
+    ``signer`` is placed where a list's own signature certificate goes, ``history``
+    where a past service version's goes, and ``other`` is one more service with its
+    own status.
     """
-    services = "".join(
-        "<TSPService><ServiceInformation>"
-        "<ServiceTypeIdentifier>http://example.org/svc</ServiceTypeIdentifier>"
-        "<ServiceDigitalIdentity><DigitalId>"
-        f"<X509Certificate>\n{_b64_der(cert)}\n</X509Certificate>"
-        "</DigitalId></ServiceDigitalIdentity>"
-        "</ServiceInformation></TSPService>"
-        for cert in certs
-    )
+    services = "".join(_service_xml(cert, status) for cert in certs)
     if empty_certificate:
-        services += (
-            "<TSPService><ServiceInformation><ServiceDigitalIdentity><DigitalId>"
-            "<X509Certificate/></DigitalId></ServiceDigitalIdentity>"
-            "</ServiceInformation></TSPService>"
-        )
+        services += _service_xml(None, status)
+    if other is not None:
+        services += _service_xml(*other)
     if history is not None:
         services += (
             "<TSPService><ServiceHistory><ServiceHistoryInstance>"
@@ -382,6 +394,58 @@ def test_etsi_xml_ignores_signer_and_history_certificates(tmp_path: Path) -> Non
     for ignored in (signer, old_version):
         with pytest.raises(UntrustedIssuer):
             anchors.resolve(ignored)
+
+
+@pytest.mark.parametrize("status", ["withdrawn", "deprecatedatnationallevel", None])
+def test_etsi_xml_skips_services_that_are_not_active(tmp_path: Path, status: str | None) -> None:
+    active = _self_signed("active")
+    inactive = _self_signed("inactive")
+    listing = tmp_path / "tsl.xml"
+    listing.write_bytes(_etsi_xml(active, other=(inactive, status)))
+    with capture_logs() as logs:
+        anchors = load_anchors([TrustSource(etsi_xml=str(listing))])
+    assert len(anchors.anchors) == 1
+    assert anchors.resolve(active)
+    with pytest.raises(UntrustedIssuer):
+        anchors.resolve(inactive)
+    skipped = [entry for entry in logs if entry["event"] == "etsi_service_skipped"]
+    assert [entry["status"] for entry in skipped] == [status or ""]
+
+
+def test_recognised_at_national_level_counts_as_active(tmp_path: Path) -> None:
+    anchor = _self_signed()
+    listing = tmp_path / "tsl.xml"
+    listing.write_bytes(_etsi_xml(anchor, status="recognisedatnationallevel"))
+    assert load_anchors([TrustSource(etsi_xml=str(listing))]).resolve(anchor)
+
+
+def test_unpinned_etsi_list_logs_its_digest(tmp_path: Path) -> None:
+    listing = tmp_path / "tsl.xml"
+    data = _etsi_xml(_self_signed())
+    listing.write_bytes(data)
+    with capture_logs() as logs:
+        load_anchors([TrustSource(etsi_xml=str(listing))])
+    (event,) = [entry for entry in logs if entry["event"] == "etsi_xml_not_pinned"]
+    assert event["sha256"] == hashlib.sha256(data).hexdigest()
+
+
+def test_pinned_etsi_list_with_matching_digest_loads_silently(tmp_path: Path) -> None:
+    anchor = _self_signed()
+    listing = tmp_path / "tsl.xml"
+    data = _etsi_xml(anchor)
+    listing.write_bytes(data)
+    pin = hashlib.sha256(data).hexdigest().upper()  # hex case does not matter
+    with capture_logs() as logs:
+        anchors = load_anchors([TrustSource(etsi_xml=str(listing), etsi_xml_sha256=pin)])
+    assert anchors.resolve(anchor)
+    assert not [entry for entry in logs if entry["event"] == "etsi_xml_not_pinned"]
+
+
+def test_pinned_etsi_list_with_a_different_digest_is_refused(tmp_path: Path) -> None:
+    listing = tmp_path / "tsl.xml"
+    listing.write_bytes(_etsi_xml(_self_signed()))
+    with pytest.raises(ConfigError, match="not the pinned"):
+        load_anchors([TrustSource(etsi_xml=str(listing), etsi_xml_sha256="0" * 64)])
 
 
 def test_etsi_xml_without_service_certificates_rejected(tmp_path: Path) -> None:

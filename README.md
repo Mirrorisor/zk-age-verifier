@@ -14,7 +14,8 @@ and unstable.
 > Changes from upstream: an `untrusted_issuer` log line naming the refused certificate
 > ([upstream issue #76](https://github.com/pipe23-org/zk-age-verifier/issues/76)), and a
 > test that pins the clock so the expired real test certificate no longer fails CI, and an
-> `etsi_xml` trust source that takes only service certificates (not the list's signer).
+> `etsi_xml` trust source that takes only active service certificates (not the list's signer)
+> and can be pinned to a reviewed file's SHA-256.
 > Everything else is upstream's work. Security fixes upstream must be merged here by hand.
 
 [![CI](https://github.com/pipe23-org/zk-age-verifier/actions/workflows/ci.yml/badge.svg)](https://github.com/pipe23-org/zk-age-verifier/actions/workflows/ci.yml)
@@ -104,9 +105,12 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
 
 - `pem` — a PEM file, or a directory whose `*.pem` files are all loaded.
 - `etsi_xml` — an ETSI trusted list, path or URL; the certificates listed in each service's
-  `ServiceDigitalIdentity` become anchors. The list's own signature is not verified, and so
-  neither is its signer, so load only a list you obtained and checked yourself. The
-  signer's certificate and the certificates of past service versions are not anchors.
+  `ServiceDigitalIdentity` become anchors, but only for services whose status is `granted`
+  or `recognisedatnationallevel` (others are skipped, with a log line). The list's own
+  signature is not verified, and neither is its signer. The signer's certificate and the
+  certificates of past service versions are not anchors. Add `etsi_xml_sha256` (the SHA-256
+  of the file you reviewed, in hex) to refuse any other content; without it the service logs
+  an `etsi_xml_not_pinned` warning that shows the digest to pin.
 
 Every listed anchor is authorized to vouch for age credentials. Sources that resolve to
 zero anchors fail startup.
