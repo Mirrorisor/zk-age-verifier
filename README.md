@@ -13,7 +13,8 @@ and unstable.
 > [Mirrorisor/age-gate](https://github.com/Mirrorisor/age-gate) can run a version it controls.
 > Changes from upstream: an `untrusted_issuer` log line naming the refused certificate
 > ([upstream issue #76](https://github.com/pipe23-org/zk-age-verifier/issues/76)), and a
-> test that pins the clock so the expired real test certificate no longer fails CI.
+> test that pins the clock so the expired real test certificate no longer fails CI, and an
+> `etsi_xml` trust source that takes only service certificates (not the list's signer).
 > Everything else is upstream's work. Security fixes upstream must be merged here by hand.
 
 [![CI](https://github.com/pipe23-org/zk-age-verifier/actions/workflows/ci.yml/badge.svg)](https://github.com/pipe23-org/zk-age-verifier/actions/workflows/ci.yml)
@@ -102,7 +103,10 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
 `[[trust.sources]]` entries form a non-empty list. Each entry sets exactly one of:
 
 - `pem` — a PEM file, or a directory whose `*.pem` files are all loaded.
-- `etsi_xml` — an ETSI trusted list, path or URL; its certificates become anchors.
+- `etsi_xml` — an ETSI trusted list, path or URL; the certificates listed in each service's
+  `ServiceDigitalIdentity` become anchors. The list's own signature is not verified, and so
+  neither is its signer, so load only a list you obtained and checked yourself. The
+  signer's certificate and the certificates of past service versions are not anchors.
 
 Every listed anchor is authorized to vouch for age credentials. Sources that resolve to
 zero anchors fail startup.

@@ -287,16 +287,56 @@ def test_empty_anchor_set_rejected(tmp_path: Path) -> None:
         load_anchors([TrustSource(pem=str(tmp_path))])
 
 
-def _etsi_xml(*certs: x509.Certificate) -> bytes:
-    entries = "".join(
-        "<X509Certificate>\n"
-        + base64.b64encode(cert.public_bytes(Encoding.DER)).decode("ascii")
-        + "\n</X509Certificate>"
+def _b64_der(cert: x509.Certificate) -> str:
+    return base64.b64encode(cert.public_bytes(Encoding.DER)).decode("ascii")
+
+
+def _etsi_xml(
+    *certs: x509.Certificate,
+    signer: x509.Certificate | None = None,
+    history: x509.Certificate | None = None,
+    empty_certificate: bool = False,
+) -> bytes:
+    """Build a minimal trusted list: one service per cert, plus optional decoys.
+
+    ``signer`` is placed where a list's own signature certificate goes,
+    ``history`` where a past service version's goes.
+    """
+    services = "".join(
+        "<TSPService><ServiceInformation>"
+        "<ServiceTypeIdentifier>http://example.org/svc</ServiceTypeIdentifier>"
+        "<ServiceDigitalIdentity><DigitalId>"
+        f"<X509Certificate>\n{_b64_der(cert)}\n</X509Certificate>"
+        "</DigitalId></ServiceDigitalIdentity>"
+        "</ServiceInformation></TSPService>"
         for cert in certs
     )
+    if empty_certificate:
+        services += (
+            "<TSPService><ServiceInformation><ServiceDigitalIdentity><DigitalId>"
+            "<X509Certificate/></DigitalId></ServiceDigitalIdentity>"
+            "</ServiceInformation></TSPService>"
+        )
+    if history is not None:
+        services += (
+            "<TSPService><ServiceHistory><ServiceHistoryInstance>"
+            "<ServiceDigitalIdentity><DigitalId>"
+            f"<X509Certificate>{_b64_der(history)}</X509Certificate>"
+            "</DigitalId></ServiceDigitalIdentity>"
+            "</ServiceHistoryInstance></ServiceHistory></TSPService>"
+        )
+    signature = ""
+    if signer is not None:
+        signature = (
+            '<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:KeyInfo><ds:X509Data>'
+            f"<ds:X509Certificate>{_b64_der(signer)}</ds:X509Certificate>"
+            "</ds:X509Data></ds:KeyInfo></ds:Signature>"
+        )
     return (
         '<TrustServiceStatusList xmlns="http://uri.etsi.org/02231/v2#">'
-        f"{entries}</TrustServiceStatusList>"
+        f"<TrustServiceProviderList><TrustServiceProvider><TSPServices>{services}"
+        f"</TSPServices></TrustServiceProvider></TrustServiceProviderList>{signature}"
+        "</TrustServiceStatusList>"
     ).encode("ascii")
 
 
@@ -325,6 +365,30 @@ def test_etsi_xml_url_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(trustlist, "urlopen", lambda _url: _Response())
     anchors = load_anchors([TrustSource(etsi_xml="https://tsl.example.org/list.xml")])
     assert anchors.resolve(anchor)
+
+
+def test_etsi_xml_ignores_signer_and_history_certificates(tmp_path: Path) -> None:
+    """Only certificates a service is listed under become anchors (issue #76)."""
+    service = _self_signed("service")
+    signer = _self_signed("list-signer")
+    old_version = _self_signed("old-version")
+    listing = tmp_path / "tsl.xml"
+    listing.write_bytes(
+        _etsi_xml(service, signer=signer, history=old_version, empty_certificate=True)
+    )
+    anchors = load_anchors([TrustSource(etsi_xml=str(listing))])
+    assert len(anchors.anchors) == 1
+    assert anchors.resolve(service)
+    for ignored in (signer, old_version):
+        with pytest.raises(UntrustedIssuer):
+            anchors.resolve(ignored)
+
+
+def test_etsi_xml_without_service_certificates_rejected(tmp_path: Path) -> None:
+    listing = tmp_path / "tsl.xml"
+    listing.write_bytes(_etsi_xml(signer=_self_signed("list-signer")))
+    with pytest.raises(ConfigError, match="no anchors"):
+        load_anchors([TrustSource(etsi_xml=str(listing))])
 
 
 def test_etsi_xml_http_url_rejected() -> None:
