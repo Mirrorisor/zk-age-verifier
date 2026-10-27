@@ -13,7 +13,13 @@ from structlog.testing import capture_logs
 
 from zk_age_verifier.config import ConfigError, TrustSource
 from zk_age_verifier.core import trustlist
-from zk_age_verifier.core.trustlist import AnchorSet, UntrustedIssuer, load_anchors
+from zk_age_verifier.core.trustlist import (
+    AnchorSet,
+    UntrustedIssuer,
+    explain_certificate,
+    load_anchors,
+    read_certificate,
+)
 
 # The test CA and the upstream test-issuer key its vendored leaf certifies.
 TEST_ANCHOR_PEM = Path(__file__).parents[1] / "integration" / "credentials" / "test-anchor.pem"
@@ -151,6 +157,96 @@ def test_untrusted_issuer_logs_presented_certificate() -> None:
     assert event["log_level"] == "warning"
     assert event["subject"] == "CN=stranger"
     assert event["sha256"] == stranger.fingerprint(hashes.SHA256()).hex()
+
+
+def _report(anchor: x509.Certificate, cert: x509.Certificate) -> tuple[bool, str]:
+    accepted, lines = explain_certificate(AnchorSet((anchor,)), cert)
+    return accepted, "\n".join(lines)
+
+
+def test_explain_agrees_with_resolve_for_a_chained_leaf() -> None:
+    ca_key = ec.generate_private_key(ec.SECP256R1())
+    ca = _cert(ca_key, "CA", "CA", ca_key, ca=True)
+    ds_key = ec.generate_private_key(ec.SECP256R1())
+    ds = _cert(ds_key, "DS", "CA", ca_key)
+    accepted, text = _report(ca, ds)
+    assert accepted
+    assert AnchorSet((ca,)).resolve(ds)
+    assert "verdict: TRUSTED" in text
+    assert "CN=CA: signed this certificate; may sign certificates" in text
+    assert "ok, valid now" in text
+    assert "sha256:      " + ds.fingerprint(hashes.SHA256()).hex() in text
+
+
+def test_explain_accepts_a_certificate_that_is_itself_an_anchor() -> None:
+    anchor = _self_signed()
+    accepted, text = _report(anchor, anchor)
+    assert accepted
+    assert "is itself a configured anchor: yes" in text
+
+
+def test_explain_names_an_unrelated_certificate() -> None:
+    accepted, text = _report(_self_signed(), _self_signed("stranger"))
+    assert not accepted
+    assert "verdict: NOT TRUSTED" in text
+    assert "did not sign it" in text
+    with pytest.raises(UntrustedIssuer):
+        AnchorSet((_self_signed(),)).resolve(_self_signed("stranger"))
+
+
+def test_explain_reports_an_expired_certificate() -> None:
+    expired = _self_signed(not_after=NOW - timedelta(days=1))
+    accepted, text = _report(expired, expired)
+    assert not accepted
+    assert "NO, not valid today" in text
+
+
+def test_explain_reports_a_missing_key_usage() -> None:
+    ca_key = ec.generate_private_key(ec.SECP256R1())
+    ca = _cert(ca_key, "CA", "CA", ca_key, ca=True)
+    ds_key = ec.generate_private_key(ec.SECP256R1())
+    ds = _cert(ds_key, "DS", "CA", ca_key, with_key_usage=False)
+    accepted, text = _report(ca, ds)
+    assert not accepted
+    assert "keyUsage digitalSignature: NO" in text
+
+
+def test_explain_reports_an_anchor_that_may_not_sign() -> None:
+    ca_key = ec.generate_private_key(ec.SECP256R1())
+    ca = _cert(ca_key, "CA", "CA", ca_key, ca=True, key_usage=_key_usage(digital_signature=True))
+    ds_key = ec.generate_private_key(ec.SECP256R1())
+    ds = _cert(ds_key, "DS", "CA", ca_key)
+    accepted, text = _report(ca, ds)
+    assert not accepted
+    assert "signed this certificate; keyCertSign NOT asserted" in text
+
+
+def test_explain_reports_a_key_that_is_not_p256() -> None:
+    key = ec.generate_private_key(ec.SECP384R1())
+    usage = _key_usage(digital_signature=True, key_cert_sign=True)
+    cert = _cert(key, "p384", "p384", key, ca=True, key_usage=usage)
+    accepted, text = _report(cert, cert)
+    assert not accepted
+    assert "public key is P-256: NO" in text
+
+
+def test_read_certificate_reads_pem_and_der(tmp_path: Path) -> None:
+    cert = _self_signed()
+    pem = tmp_path / "c.pem"
+    pem.write_bytes(cert.public_bytes(Encoding.PEM))
+    der = tmp_path / "c.der"
+    der.write_bytes(cert.public_bytes(Encoding.DER))
+    assert read_certificate(str(pem)) == cert
+    assert read_certificate(str(der)) == cert
+
+
+def test_read_certificate_rejects_a_missing_or_wrong_file(tmp_path: Path) -> None:
+    junk = tmp_path / "junk.txt"
+    junk.write_text("not a certificate")
+    with pytest.raises(ConfigError, match="cannot read"):
+        read_certificate(str(tmp_path / "missing.pem"))
+    with pytest.raises(ConfigError, match="PEM or DER"):
+        read_certificate(str(junk))
 
 
 def test_expired_anchor_rejected() -> None:

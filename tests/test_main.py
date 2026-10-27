@@ -9,6 +9,8 @@ from zk_age_verifier import __main__
 from zk_age_verifier.__main__ import _serve, main
 from zk_age_verifier.app import CONFIG_ENV_VAR
 
+CREDENTIALS = Path(__file__).parent / "integration" / "credentials"
+
 
 @pytest.fixture(autouse=True)
 def _clean_config_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
@@ -36,6 +38,38 @@ def test_main_rejects_bad_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     with pytest.raises(SystemExit):
         main(["--config", str(tmp_path / "missing.toml")])
     assert CONFIG_ENV_VAR not in os.environ
+
+
+def test_check_cert_trusted_exits_zero(
+    config_file: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    served: list[tuple[str, int]] = []
+    monkeypatch.setattr(__main__, "_serve", lambda host, port: served.append((host, port)))
+    leaf = CREDENTIALS / "eu-av-vendored" / "leaf.pem"
+    with pytest.raises(SystemExit) as stop:
+        main(["--config", str(config_file), "--check-cert", str(leaf)])
+    assert stop.value.code == 0
+    assert "verdict: TRUSTED" in capsys.readouterr().out
+    assert served == []  # checking a certificate never starts the server
+
+
+def test_check_cert_untrusted_exits_one(
+    config_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    leaf = CREDENTIALS / "eu-av-untrusted" / "leaf.pem"  # signed by a CA the config lacks
+    with pytest.raises(SystemExit) as stop:
+        main(["--config", str(config_file), "--check-cert", str(leaf)])
+    assert stop.value.code == 1
+    assert "verdict: NOT TRUSTED" in capsys.readouterr().out
+
+
+def test_check_cert_reports_bad_input_with_exit_two(
+    config_file: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as stop:
+        main(["--config", str(config_file), "--check-cert", str(tmp_path / "missing.pem")])
+    assert stop.value.code == 2
+    assert "cannot read" in capsys.readouterr().err
 
 
 def test_serve_boots_granian(monkeypatch: pytest.MonkeyPatch) -> None:

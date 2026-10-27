@@ -100,6 +100,81 @@ class AnchorSet:
         return False
 
 
+def explain_certificate(anchors: AnchorSet, cert: x509.Certificate) -> tuple[bool, list[str]]:
+    """Describe, check by check, whether a presented certificate would be trusted.
+
+    This repeats the checks ``AnchorSet.resolve`` makes, but reports every one
+    instead of stopping at the first failure, so an operator can see which one
+    fails. It is for diagnosis (``--check-cert``); the service itself uses
+    ``resolve``.
+
+    Args:
+        anchors: The configured anchors.
+        cert: The certificate to examine, as a wallet would present it.
+
+    Returns:
+        Whether ``resolve`` would accept it, and the report, one line per check.
+    """
+    now = datetime.now(UTC)
+    fingerprint = cert.fingerprint(hashes.SHA256())
+    in_window = cert.not_valid_before_utc <= now <= cert.not_valid_after_utc
+    signs = _key_usage_permits(cert, "digital_signature")
+    public_key = cert.public_key()
+    p256 = isinstance(public_key, ec.EllipticCurvePublicKey) and isinstance(
+        public_key.curve, ec.SECP256R1
+    )
+    is_anchor = any(
+        fingerprint == anchor.fingerprint(hashes.SHA256()) for anchor in anchors.anchors
+    )
+    lines = [
+        f"certificate: {cert.subject.rfc4514_string()}",
+        f"issuer:      {cert.issuer.rfc4514_string()}",
+        f"sha256:      {fingerprint.hex()}",
+        f"valid {cert.not_valid_before_utc:%Y-%m-%d} to {cert.not_valid_after_utc:%Y-%m-%d}: "
+        + ("ok, valid now" if in_window else "NO, not valid today"),
+        "keyUsage digitalSignature: " + ("yes" if signs else "NO (missing or not asserted)"),
+        "public key is P-256: " + ("yes" if p256 else "NO"),
+        "is itself a configured anchor: " + ("yes" if is_anchor else "no"),
+        f"configured anchors ({len(anchors.anchors)}):",
+    ]
+    issued = False
+    for anchor in anchors.anchors:
+        can_sign = _key_usage_permits(anchor, "key_cert_sign")
+        try:
+            cert.verify_directly_issued_by(anchor)
+            verdict = "signed this certificate"
+            issued = issued or can_sign
+        except (ValueError, TypeError, InvalidSignature) as exc:
+            verdict = "did not sign it (" + (str(exc) or type(exc).__name__) + ")"
+        lines.append(
+            f"  - {anchor.subject.rfc4514_string()}: {verdict}; "
+            + ("may sign certificates" if can_sign else "keyCertSign NOT asserted")
+        )
+    accepted = in_window and signs and p256 and (is_anchor or issued)
+    lines.append("verdict: " + ("TRUSTED" if accepted else "NOT TRUSTED"))
+    return accepted, lines
+
+
+def read_certificate(path: str) -> x509.Certificate:
+    """Read one certificate from a PEM or DER file (the first one, for a PEM bundle).
+
+    Raises:
+        ConfigError: The file cannot be read or holds no certificate.
+    """
+    try:
+        data = Path(path).read_bytes()
+    except OSError as exc:
+        raise ConfigError(f"cannot read certificate file {path}: {exc}") from exc
+    try:
+        return x509.load_pem_x509_certificates(data)[0]
+    except ValueError:
+        pass
+    try:
+        return x509.load_der_x509_certificate(data)
+    except ValueError as exc:
+        raise ConfigError(f"{path} does not contain a PEM or DER certificate") from exc
+
+
 def _log_untrusted(cert: x509.Certificate, reason: str) -> None:
     """Log which certificate was refused, so an operator can tell why.
 

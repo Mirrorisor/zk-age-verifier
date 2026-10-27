@@ -34,6 +34,22 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
 Every listed anchor is authorized to vouch for age credentials. Sources that resolve to
 zero anchors fail startup.
 
+### Checking why a certificate is not trusted
+
+A failed check says `untrusted-issuer` and the service logs which certificate it refused.
+To test a certificate without a phone or a running service, save it as a PEM or DER file and
+ask the configuration directly:
+
+```
+zk-age-verifier --config config.toml --check-cert document-signer.pem
+```
+
+It prints the certificate's name, issuer and SHA-256 fingerprint, then each check in turn
+(validity today, `keyUsage` `digitalSignature`, a P-256 key, whether it is a configured anchor
+or which anchor signed it and whether that anchor may sign certificates) and ends with
+`verdict: TRUSTED` or `verdict: NOT TRUSTED`. It never starts the service. The exit status is
+0 if trusted, 1 if not, and 2 if the configuration or the file could not be read.
+
 ## Environment variables
 
 `ZK_AGE_VERIFIER_SECTION__KEY` overrides a scalar value: `ZK_AGE_VERIFIER_` is the prefix
