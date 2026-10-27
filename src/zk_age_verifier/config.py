@@ -94,10 +94,15 @@ class TrustSource(BaseModel):
 
     pem: str | None = None
     etsi_xml: str | None = None
+    # SHA-256 (hex) of the exact list file the operator reviewed. When set, a list
+    # with any other content is refused at startup.
+    etsi_xml_sha256: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")
 
     @model_validator(mode="after")
     def _validate_single_source(self) -> "TrustSource":
-        """Reject entries that set zero or several source keys."""
+        """Reject entries that set zero or several source keys, or a pin without a list."""
+        if self.etsi_xml_sha256 is not None and self.etsi_xml is None:
+            raise ValueError("etsi_xml_sha256 can only be used together with etsi_xml")
         set_keys = [
             key
             for key, value in (("pem", self.pem), ("etsi_xml", self.etsi_xml))

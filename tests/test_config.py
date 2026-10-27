@@ -154,6 +154,7 @@ def test_service_forbids_unknown_key() -> None:
     [
         {"pem": "/etc/anchors"},
         {"etsi_xml": "https://x/list.xml"},
+        {"etsi_xml": "https://x/list.xml", "etsi_xml_sha256": "ab" * 32},
     ],
 )
 def test_valid_trust_source(kwargs: dict[str, str]) -> None:
@@ -166,6 +167,8 @@ def test_valid_trust_source(kwargs: dict[str, str]) -> None:
     [
         {},  # zero keys
         {"pem": "/etc/anchors", "etsi_xml": "https://x/list.xml"},  # two keys
+        {"pem": "/etc/anchors", "etsi_xml_sha256": "ab" * 32},  # a pin needs a list
+        {"etsi_xml": "https://x/list.xml", "etsi_xml_sha256": "xyz"},  # not a SHA-256
     ],
 )
 def test_bad_trust_source(kwargs: dict[str, str]) -> None:

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- An `etsi_xml` trust source now takes only certificates listed under a service's `ServiceDigitalIdentity` (not the list's own signer or past service versions), and skips services whose status is not `granted` or `recognisedatnationallevel`. A new optional `etsi_xml_sha256` refuses a list with different content; without it the service logs `etsi_xml_not_pinned` with the digest. The list's own signature is still not verified ([#76](https://github.com/pipe23-org/zk-age-verifier/issues/76)).
 - Configuration file table and key names are matched case-sensitively; environment variable names are not. Previously the TOML source relied on pydantic-settings' default, which pydantic-settings 2.15 changed to case-insensitive for top-level tables.
 
 ## 0.4.0 - 2026-08-08
