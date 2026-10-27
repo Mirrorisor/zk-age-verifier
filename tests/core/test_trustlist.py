@@ -162,7 +162,21 @@ def test_non_p256_key_rejected() -> None:
         AnchorSet((cert,)).resolve(cert)
 
 
-def test_real_document_signer_resolves_through_real_anchor() -> None:
+class _FrozenDatetime(datetime):
+    """``datetime`` whose ``now()`` is a day inside the real document signer's validity."""
+
+    @classmethod
+    def now(cls, tz=None):  # type: ignore[no-untyped-def,override]
+        return datetime(2026, 7, 1, tzinfo=UTC)
+
+
+def test_real_document_signer_resolves_through_real_anchor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The real document signer is valid only until 2026-09-24, so the clock is
+    # pinned to a day inside its validity. Without this the test starts failing
+    # the day the certificate expires.
+    monkeypatch.setattr(trustlist, "datetime", _FrozenDatetime)
     anchor = x509.load_pem_x509_certificate(AV_ISSUER_CA_PEM.read_bytes())
     signer = x509.load_pem_x509_certificate(AV_DOCUMENT_SIGNER_PEM.read_bytes())
     with capture_logs() as logs:
