@@ -278,9 +278,7 @@ def _with_serial_zero(cert: x509.Certificate) -> x509.Certificate:
     _, _, after_version = trustlist._read_tlv(tbs, 0)
     _, _, after_serial = trustlist._read_tlv(tbs, after_version)
     patched_tbs = tbs[:after_version] + b"\x02\x01\x00" + tbs[after_serial:]
-    return x509.load_der_x509_certificate(
-        _der(0x30, _der(0x30, patched_tbs) + body[after_tbs:])
-    )
+    return x509.load_der_x509_certificate(_der(0x30, _der(0x30, patched_tbs) + body[after_tbs:]))
 
 
 def test_an_anchor_with_a_non_positive_serial_number_still_loads(tmp_path: Path) -> None:
