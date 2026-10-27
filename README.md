@@ -7,6 +7,15 @@ boolean per requested check. The service has no authentication and is intended t
 reachable only from the consumer backend, not the browser or internet. It is experimental
 and unstable.
 
+> **Fork notice.** This is a fork of
+> [pipe23-org/zk-age-verifier](https://github.com/pipe23-org/zk-age-verifier)
+> (Apache-2.0, copyright Nathan Schepers), kept so that
+> [Mirrorisor/age-gate](https://github.com/Mirrorisor/age-gate) can run a version it controls.
+> Changes from upstream: an `untrusted_issuer` log line naming the refused certificate
+> ([upstream issue #76](https://github.com/pipe23-org/zk-age-verifier/issues/76)), and a
+> test that pins the clock so the expired real test certificate no longer fails CI.
+> Everything else is upstream's work. Security fixes upstream must be merged here by hand.
+
 [![CI](https://github.com/pipe23-org/zk-age-verifier/actions/workflows/ci.yml/badge.svg)](https://github.com/pipe23-org/zk-age-verifier/actions/workflows/ci.yml)
 [![Docs](https://app.readthedocs.org/projects/zk-age-verifier/badge/?version=stable)](https://zk-age-verifier.readthedocs.io/en/stable/)
 [![PyPI](https://img.shields.io/pypi/v/zk-age-verifier)](https://pypi.org/project/zk-age-verifier/)

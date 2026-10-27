@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fork only: `test_real_document_signer_resolves_through_real_anchor` pins the clock, because the real document-signer test certificate expired on 2026-09-24. Added a fork notice to the README.
 - An `untrusted-issuer` failure now logs an `untrusted_issuer` warning naming the presented certificate (subject, issuer, validity, SHA-256 fingerprint) and why it was refused. The verdict returned to the client is unchanged ([#76](https://github.com/pipe23-org/zk-age-verifier/issues/76)).
 - Configuration file table and key names are matched case-sensitively; environment variable names are not. Previously the TOML source relied on pydantic-settings' default, which pydantic-settings 2.15 changed to case-insensitive for top-level tables.
 
