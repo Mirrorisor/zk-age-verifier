@@ -8,4 +8,5 @@ offer. The wallet's response is submitted (`POST /sessions/{session_id}/presenta
 the verdict is returned.
 
 The [Configuration](configuration.md) page documents the `[service]` and `[trust]` keys and
-the environment-variable overrides. The [HTTP API](api.md) page documents the API.
+the environment-variable overrides. The [HTTP API](api.md) page documents the API. If a check
+ends in `untrusted-issuer`, see [Troubleshooting](troubleshooting.md).

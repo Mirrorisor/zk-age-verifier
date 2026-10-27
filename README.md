@@ -133,6 +133,9 @@ or which anchor signed it and whether that anchor may sign certificates) and end
 `verdict: TRUSTED` or `verdict: NOT TRUSTED`. It never starts the service. The exit status is
 0 if trusted, 1 if not, and 2 if the configuration or the file could not be read.
 
+See [docs/troubleshooting.md](docs/troubleshooting.md) for what each log line means and how to
+read the `--check-cert` result.
+
 ### Environment variables
 
 `ZK_AGE_VERIFIER_SECTION__KEY` overrides a scalar value: `ZK_AGE_VERIFIER_` is the prefix
