@@ -176,7 +176,7 @@ class _FrozenDatetime(datetime):
     """``datetime`` whose ``now()`` is a day inside the real document signer's validity."""
 
     @classmethod
-    def now(cls, tz=None):  # type: ignore[no-untyped-def,override]
+    def now(cls, tz=None):  # type: ignore[no-untyped-def]
         return datetime(2026, 7, 1, tzinfo=UTC)
 
 
