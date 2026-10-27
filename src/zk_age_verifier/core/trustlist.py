@@ -66,12 +66,14 @@ class AnchorSet:
                 not P-256.
         """
         if not self._accepts(cert):
+            _log_untrusted(cert, "no anchor accepts the presented certificate")
             raise UntrustedIssuer("no anchor accepts the presented certificate")
         public_key = cert.public_key()
         if not (
             isinstance(public_key, ec.EllipticCurvePublicKey)
             and isinstance(public_key.curve, ec.SECP256R1)
         ):
+            _log_untrusted(cert, "presented certificate key is not P-256")
             raise UntrustedIssuer("presented certificate key is not P-256")
         numbers = public_key.public_numbers()
         return numbers.x, numbers.y
@@ -95,6 +97,25 @@ class AnchorSet:
                 continue
             return True
         return False
+
+
+def _log_untrusted(cert: x509.Certificate, reason: str) -> None:
+    """Log which certificate was refused, so an operator can tell why.
+
+    The verdict a client sees stays the bare ``untrusted-issuer``; this detail
+    goes to the server log only. It names the presented certificate and its
+    SHA-256 fingerprint, which is what an operator compares against the anchors
+    they configured (https://github.com/pipe23-org/zk-age-verifier/issues/76).
+    """
+    log.warning(
+        "untrusted_issuer",
+        reason=reason,
+        subject=cert.subject.rfc4514_string(),
+        issuer=cert.issuer.rfc4514_string(),
+        sha256=cert.fingerprint(hashes.SHA256()).hex(),
+        not_before=cert.not_valid_before_utc.isoformat(),
+        not_after=cert.not_valid_after_utc.isoformat(),
+    )
 
 
 def _key_usage_permits(cert: x509.Certificate, bit: str) -> bool:
