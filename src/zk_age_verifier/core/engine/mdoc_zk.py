@@ -16,7 +16,7 @@ import structlog
 from cryptography import x509
 from pylongfellow import mdoc
 
-from zk_age_verifier.core.constants import DOC_TYPE
+from zk_age_verifier.core.constants import CredentialProfile
 from zk_age_verifier.core.engine.circuits import HeldCircuit
 from zk_age_verifier.core.trustlist import AnchorSet
 
@@ -100,6 +100,8 @@ async def verify_presentation(
     anchors: AnchorSet,
     claims: tuple[str, ...],
     timestamp_skew_seconds: int,
+    *,
+    profile: CredentialProfile,
 ) -> EngineResult:
     """Verify a decrypted presentation and return the established claims.
 
@@ -113,6 +115,8 @@ async def verify_presentation(
         anchors: The resolved trust anchors.
         claims: The session's requested checks.
         timestamp_skew_seconds: The allowed skew on the proof timestamp.
+        profile: The credential profile the service accepts; its doctype and claim
+            namespace are what the response must carry and what the proof is bound to.
 
     Returns:
         The established claims.
@@ -133,7 +137,9 @@ async def verify_presentation(
             f"wallet used {document.zk_system_id}, holder has {held.zk_system_id}"
         )
 
-    if document.doc_type != DOC_TYPE or not _claims_disclosed(document.issuer_signed, claims):
+    if document.doc_type != profile.doc_type or not _claims_disclosed(
+        document.issuer_signed, profile.namespace, claims
+    ):
         raise ClaimMismatch("docType or disclosed claims do not match the request")
 
     now = datetime.now(UTC)
@@ -149,7 +155,7 @@ async def verify_presentation(
     if device_namespaces is None:
         device_namespaces = _ASSUMED_DEVICE_NAMESPACES
 
-    requested = [mdoc.RequestedAttribute(DOC_TYPE, claim, _CLAIM_TRUE) for claim in claims]
+    requested = [mdoc.RequestedAttribute(profile.namespace, claim, _CLAIM_TRUE) for claim in claims]
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(
         None,
@@ -160,7 +166,7 @@ async def verify_presentation(
             requested,
             document.timestamp,
             document.proof,
-            DOC_TYPE,
+            profile.doc_type,
             device_namespaces=device_namespaces,
         ),
     )
@@ -245,9 +251,11 @@ def _parse_zk_document(zk_doc: object) -> ZkDocument:
     )
 
 
-def _claims_disclosed(issuer_signed: dict[str, object], claims: tuple[str, ...]) -> bool:
-    """Report whether every requested claim is disclosed as true."""
-    disclosed = issuer_signed.get(DOC_TYPE)
+def _claims_disclosed(
+    issuer_signed: dict[str, object], namespace: str, claims: tuple[str, ...]
+) -> bool:
+    """Report whether every requested claim is disclosed as true in the namespace."""
+    disclosed = issuer_signed.get(namespace)
     if not isinstance(disclosed, list):
         return False
     present = {

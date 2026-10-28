@@ -41,6 +41,13 @@ ends with `verdict: TRUSTED` or `verdict: NOT TRUSTED`, and never starts the ser
 Adding an anchor trusts everything that anchor signs. Only add a certificate you have checked
 against the issuer's own published source.
 
+## A check ended in `claim-mismatch`
+
+The credential's doctype, or the place its `age_over_18` claim sits, is not what this service
+asks for. Check `credential` under `[service]`: `eu-av` accepts only the EU age-verification
+credential, `iso-mdl` only an ISO mobile driving licence. A wallet that holds the other kind
+of credential is refused until you point a service at it.
+
 ## Other log lines
 
 | Log line | Meaning |

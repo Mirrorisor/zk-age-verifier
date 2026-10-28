@@ -5,6 +5,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
 from pylongfellow.mdoc import CircuitSpec
 
+from zk_age_verifier.core.constants import EU_AV, ISO_MDL
 from zk_age_verifier.core.encoding import b64url_decode, b64url_encode
 from zk_age_verifier.core.engine.circuits import HeldCircuit, zk_system_id
 from zk_age_verifier.core.transport.dc import (
@@ -119,13 +120,27 @@ def test_dc_request_shape() -> None:
     assert b64url_decode(data["encryptionInfo"]) == b"\x03\x04"
 
 
+def test_device_request_names_the_iso_licence_namespace_apart_from_its_doctype(
+    spec: CircuitSpec,
+) -> None:
+    decoded = cbor2.loads(build_device_request(spec, zk_system_id(spec), ["age_over_18"], ISO_MDL))
+    items = cbor2.loads(decoded["docRequests"][0]["itemsRequest"].value)
+    assert items["docType"] == "org.iso.18013.5.1.mDL"
+    assert items["nameSpaces"] == {"org.iso.18013.5.1": {"age_over_18": False}}
+
+
+def test_device_request_defaults_to_the_eu_profile(spec: CircuitSpec) -> None:
+    explicit = build_device_request(spec, "zsid", ["age_over_18"], EU_AV)
+    assert build_device_request(spec, "zsid", ["age_over_18"]) == explicit
+
+
 def test_claim_count_guard(spec: CircuitSpec) -> None:
     with pytest.raises(ValueError, match="claim count"):
         build_device_request(spec, "zsid", [])
 
 
 def test_build_offer_state_and_request(held: HeldCircuit) -> None:
-    state, offer = DcTransport(held).build_offer(["age_over_18"])
+    state, offer = DcTransport(held, EU_AV).build_offer(["age_over_18"])
 
     assert offer["mediation"] == "required"
     digital = offer["digital"]
@@ -227,3 +242,13 @@ def test_parse_wrapper_wrong_discriminator() -> None:
 def test_parse_wrapper_missing_fields() -> None:
     with pytest.raises(InvalidEnvelope):
         parse_response_wrapper(_wrapper(ciphertext="not-bytes"))
+
+
+def test_build_offer_asks_for_the_credential_the_transport_was_given(held: HeldCircuit) -> None:
+    _, offer = DcTransport(held, ISO_MDL).build_offer(["age_over_18"])
+    digital = offer["digital"]
+    assert isinstance(digital, dict)
+    device_request = cbor2.loads(b64url_decode(digital["requests"][0]["data"]["deviceRequest"]))
+    items = cbor2.loads(device_request["docRequests"][0]["itemsRequest"].value)
+    assert items["docType"] == ISO_MDL.doc_type
+    assert list(items["nameSpaces"]) == [ISO_MDL.namespace]

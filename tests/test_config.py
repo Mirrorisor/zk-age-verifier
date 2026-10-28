@@ -10,6 +10,7 @@ from zk_age_verifier.config import (
     TrustSource,
     load_config,
 )
+from zk_age_verifier.core.constants import EU_AV, ISO_MDL
 
 PREFIX = "ZK_AGE_VERIFIER_"
 
@@ -38,6 +39,31 @@ def test_load_defaults(config_file: Path) -> None:
     assert config.service.cors_allowed_origins == []
     pem = config.trust.sources[0].pem
     assert pem is not None and pem.endswith("test-anchor.pem")
+
+
+def test_credential_defaults_to_the_eu_age_verification_profile(tmp_path: Path) -> None:
+    config = load_config(_write(tmp_path, BASE_CONFIG))
+    assert config.service.credential == "eu-av"
+    assert config.service.profile is EU_AV
+
+
+def test_credential_selects_the_iso_driving_licence_profile(tmp_path: Path) -> None:
+    body = BASE_CONFIG.replace("[trust]", 'credential = "iso-mdl"\n[trust]')
+    config = load_config(_write(tmp_path, body))
+    assert config.service.profile is ISO_MDL
+
+
+def test_credential_can_come_from_the_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(f"{PREFIX}SERVICE__CREDENTIAL", "iso-mdl")
+    config = load_config(_write(tmp_path, BASE_CONFIG))
+    assert config.service.profile is ISO_MDL
+
+
+def test_unknown_credential_is_rejected_and_the_choices_are_named() -> None:
+    with pytest.raises(ValidationError, match="credential must be one of"):
+        ServiceConfig(expected_origin="https://chat.example.org", credential="passport")
 
 
 def test_timestamp_skew_override(tmp_path: Path) -> None:

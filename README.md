@@ -98,6 +98,13 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
   the proof timestamp and the verifier clock.
 - `cors_allowed_origins` (default empty) — origins granted cross-origin access to the API.
   An empty list sends no CORS headers.
+- `credential` (default `eu-av`) — the kind of credential this service accepts: `eu-av` for the
+  EU age-verification credential (doctype `eu.europa.ec.av.1`), or `iso-mdl` for an ISO/IEC
+  18013-5 mobile driving licence (doctype `org.iso.18013.5.1.mDL`, claims in the
+  `org.iso.18013.5.1` namespace). One service accepts one kind; run a second service for the
+  other. The check is still exactly `age_over_18`. A licence is only accepted if its issuer's
+  certificate chains to a `[trust]` anchor you configured, so an `iso-mdl` service needs the
+  licence issuer's root, not the EU one.
 
 ### [trust]
 

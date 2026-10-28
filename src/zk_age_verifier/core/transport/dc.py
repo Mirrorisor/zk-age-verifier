@@ -17,7 +17,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from pyhpke import AEADId, CipherSuite, KDFId, KEMId, KEMKey
 from pylongfellow.mdoc import CircuitSpec
 
-from zk_age_verifier.core.constants import DOC_TYPE
+from zk_age_verifier.core.constants import EU_AV, CredentialProfile
 from zk_age_verifier.core.encoding import b64url_decode, b64url_encode
 from zk_age_verifier.core.engine.circuits import HeldCircuit
 
@@ -68,7 +68,7 @@ def build_device_request(
     spec: CircuitSpec,
     zk_system_id: str,
     claims: Sequence[str],
-    doc_type: str = DOC_TYPE,
+    profile: CredentialProfile = EU_AV,
 ) -> bytes:
     """Build the CBOR ``DeviceRequest`` carrying the ZK ask.
 
@@ -76,7 +76,7 @@ def build_device_request(
         spec: The held circuit's spec; its fields populate ``params``.
         zk_system_id: The circuit-identity string advertised in ``systemSpecs``.
         claims: Requested claim identifiers, one namespace entry each.
-        doc_type: The credential doctype and claim namespace.
+        profile: The credential profile; its doctype and claim namespace are asked for.
 
     Returns:
         CBOR bytes of the ``DeviceRequest``.
@@ -106,8 +106,8 @@ def build_device_request(
     # DocRequest-level sibling key is never parsed; the wallet then silently
     # falls back to a standard presentation (observed on-device, 2026-07-14).
     items_request = {
-        "docType": doc_type,
-        "nameSpaces": {doc_type: {claim: False for claim in claims}},
+        "docType": profile.doc_type,
+        "nameSpaces": {profile.namespace: {claim: False for claim in claims}},
         "requestInfo": {"zkRequest": {"systemSpecs": [system_spec], "zkRequired": True}},
     }
     doc_request = {"itemsRequest": cbor2.CBORTag(24, cbor2.dumps(items_request))}
@@ -284,13 +284,15 @@ class DcSessionState:
 class DcTransport:
     """Builds the DC offer for a session and the transport state it keeps."""
 
-    def __init__(self, held: HeldCircuit) -> None:
-        """Bind the transport to the circuit every offer advertises.
+    def __init__(self, held: HeldCircuit, profile: CredentialProfile) -> None:
+        """Bind the transport to the circuit and credential every offer asks for.
 
         Args:
             held: The resolved circuit whose identity every request advertises.
+            profile: The credential profile every request asks for.
         """
         self._held = held
+        self._profile = profile
 
     def build_offer(self, claims: Sequence[str]) -> tuple[DcSessionState, dict[str, object]]:
         """Build the ``navigator.credentials.get`` offer and its session state.
@@ -304,7 +306,9 @@ class DcTransport:
         private_key = ec.generate_private_key(ec.SECP256R1())
         nonce = secrets.token_bytes(_NONCE_BYTES)
         encryption_info = build_encryption_info(nonce, private_key.public_key())
-        device_request = build_device_request(self._held.spec, self._held.zk_system_id, claims)
+        device_request = build_device_request(
+            self._held.spec, self._held.zk_system_id, claims, self._profile
+        )
         offer = build_dc_request(device_request, encryption_info)
         state = DcSessionState(
             private_key=private_key,

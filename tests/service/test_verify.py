@@ -13,7 +13,7 @@ from pylongfellow import mdoc
 
 from tests.conftest import ORIGIN, render_config
 from zk_age_verifier.config import Config, load_config
-from zk_age_verifier.core.constants import DOC_TYPE
+from zk_age_verifier.core.constants import DOC_TYPE, ISO_MDL
 from zk_age_verifier.core.encoding import b64url_encode
 from zk_age_verifier.core.engine import mdoc_zk
 from zk_age_verifier.core.engine.circuits import HeldCircuit
@@ -122,6 +122,70 @@ async def test_verified_happy_path(
     assert isinstance(verdict, VerdictVerified)
     assert verdict.result == {"age_over_18": True}
     assert verdict.verified_at.endswith("Z")
+
+
+@pytest.fixture
+def mdl_config(tmp_path: Path) -> Config:
+    path = tmp_path / "mdl-config.toml"
+    path.write_text(render_config(credential="iso-mdl"))
+    return load_config(path)
+
+
+def _mdl_response(held: HeldCircuit, chain_der: bytes, **overrides: object) -> bytes:
+    fields: dict[str, object] = {
+        "docType": ISO_MDL.doc_type,
+        "issuerSigned": {
+            ISO_MDL.namespace: [{"elementIdentifier": "age_over_18", "elementValue": True}]
+        },
+    }
+    fields.update(overrides)
+    return _device_response(held, chain_der, **fields)
+
+
+async def test_licence_profile_verifies_and_binds_the_proof_to_the_licence(
+    session: Session, held: HeldCircuit, mdl_config: Config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cert, chain = _anchor_cert()
+    seen: dict[str, object] = {}
+
+    def _record(*args: object, **_kwargs: object) -> None:
+        seen["doc_type"] = args[5]
+        seen["requested"] = args[2]
+
+    monkeypatch.setattr(mdoc_zk.mdoc, "RequestedAttribute", lambda *fields: fields)
+    monkeypatch.setattr(held.longfellow, "verify", _record)
+    body = _body(session, _mdl_response(held, chain))
+    verdict = await verify_response(session, held, AnchorSet((cert,)), body, mdl_config)
+    assert isinstance(verdict, VerdictVerified)
+    assert seen["doc_type"] == "org.iso.18013.5.1.mDL"
+    assert seen["requested"] == [("org.iso.18013.5.1", "age_over_18", cbor2.dumps(True))]
+
+
+async def test_licence_profile_refuses_the_eu_credential(
+    session: Session, held: HeldCircuit, mdl_config: Config
+) -> None:
+    body = _body(session, _device_response(held, _anchor_cert()[1]))
+    verdict = await verify_response(session, held, AnchorSet(()), body, mdl_config)
+    assert verdict == VerdictFailed(state="failed", reason="claim-mismatch")
+
+
+async def test_eu_profile_refuses_the_licence(
+    session: Session, held: HeldCircuit, config: Config
+) -> None:
+    body = _body(session, _mdl_response(held, _anchor_cert()[1]))
+    verdict = await verify_response(session, held, AnchorSet(()), body, config)
+    assert verdict == VerdictFailed(state="failed", reason="claim-mismatch")
+
+
+async def test_licence_profile_wants_the_claim_in_the_licence_namespace(
+    session: Session, held: HeldCircuit, mdl_config: Config
+) -> None:
+    # Right doctype, but the claim sits under the doctype string: that is the EU
+    # layout, not the licence's, so it must not satisfy this profile.
+    wrong_place = {ISO_MDL.doc_type: [{"elementIdentifier": "age_over_18", "elementValue": True}]}
+    body = _body(session, _mdl_response(held, _anchor_cert()[1], issuerSigned=wrong_place))
+    verdict = await verify_response(session, held, AnchorSet(()), body, mdl_config)
+    assert verdict == VerdictFailed(state="failed", reason="claim-mismatch")
 
 
 async def test_absent_device_namespaces_verify_under_assumption(

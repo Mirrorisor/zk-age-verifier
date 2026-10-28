@@ -58,6 +58,19 @@ def client(
         yield test_client
 
 
+@pytest.fixture(scope="session")
+def licence_client(
+    tmp_path_factory: pytest.TempPathFactory, verifier_backend: str
+) -> Iterator[httpx.Client]:
+    """A verifier configured for ISO driving licences instead of the EU credential."""
+    config_file = tmp_path_factory.mktemp("licence-config") / "config.toml"
+    config_file.write_text(
+        render_config(**{"pylongfellow.backend": verifier_backend, "credential": "iso-mdl"})
+    )
+    with TestClient(create_app(load_config(config_file))) as test_client:
+        yield test_client
+
+
 @pytest.fixture
 def created_session(client: httpx.Client) -> dict[str, Any]:
     created = client.post("/sessions", json={"checks": ["age_over_18"]})

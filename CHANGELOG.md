@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fork only: `[service] credential` chooses the credential kind the service asks for and accepts: `eu-av` (default, unchanged) or `iso-mdl`, an ISO/IEC 18013-5 mobile driving licence. The doctype and the claim namespace are now separate values, because for a licence they differ. An integration test proves a licence with the real prover and verifier. The default behaviour is unchanged.
 - Fork only: added `docs/troubleshooting.md`, covering `untrusted-issuer`, the `--check-cert` output and the service's warning log lines.
 - Fork only: the `untrusted_issuer` log line now carries the refused certificate as `der_base64`, and `--check-cert` also reads base64-DER text, so a failed check can be explained offline by pasting the logged value into a file. A test builds a certificate with serial number 0 (like the Multipaz TEST IACA) and fails if a `cryptography` upgrade stops loading such anchors.
 - Fork only: `--check-cert CERT` tests a PEM or DER certificate against the configured trust anchors and prints each check (validity, keyUsage, key type, which anchor signed it) and a TRUSTED / NOT TRUSTED verdict, without starting the service.

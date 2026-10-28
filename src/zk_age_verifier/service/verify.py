@@ -183,6 +183,7 @@ async def _run_engine(
             anchors,
             context.claims,
             config.service.timestamp_skew_seconds,
+            profile=config.service.profile,
         )
     except MalformedPresentation as exc:
         raise _Failed("invalid-envelope") from exc

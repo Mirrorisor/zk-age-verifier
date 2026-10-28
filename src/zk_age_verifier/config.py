@@ -29,6 +29,8 @@ from pydantic_settings import (
     TomlConfigSettingsSource,
 )
 
+from zk_age_verifier.core.constants import EU_AV, PROFILES, CredentialProfile
+
 
 class ConfigError(Exception):
     """Raised when a configuration file is missing, unparseable, or invalid."""
@@ -79,12 +81,26 @@ class ServiceConfig(BaseModel):
     session_cap: int = 1000
     timestamp_skew_seconds: int = 300
     cors_allowed_origins: list[str] = Field(default_factory=list)
+    credential: str = EU_AV.name
 
     @field_validator("expected_origin")
     @classmethod
     def _validate_origin(cls, value: str) -> str:
         """Validate the configured origin against the shared rules."""
         return validate_origin(value)
+
+    @field_validator("credential")
+    @classmethod
+    def _validate_credential(cls, value: str) -> str:
+        """Accept only the name of a known credential profile."""
+        if value not in PROFILES:
+            raise ValueError(f"credential must be one of {sorted(PROFILES)}, not {value!r}")
+        return value
+
+    @property
+    def profile(self) -> CredentialProfile:
+        """The credential profile this service accepts."""
+        return PROFILES[self.credential]
 
 
 class TrustSource(BaseModel):
