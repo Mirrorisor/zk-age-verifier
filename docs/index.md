@@ -9,4 +9,6 @@ the verdict is returned.
 
 The [Configuration](configuration.md) page documents the `[service]` and `[trust]` keys and
 the environment-variable overrides. The [HTTP API](api.md) page documents the API. If a check
-ends in `untrusted-issuer`, see [Troubleshooting](troubleshooting.md).
+ends in `untrusted-issuer`, see [Troubleshooting](troubleshooting.md). The
+[Compatibility](compatibility.md) page lists which credentials and wallets work today and the
+limits of the proof system.

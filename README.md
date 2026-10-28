@@ -141,7 +141,8 @@ or which anchor signed it and whether that anchor may sign certificates) and end
 0 if trusted, 1 if not, and 2 if the configuration or the file could not be read.
 
 See [docs/troubleshooting.md](docs/troubleshooting.md) for what each log line means and how to
-read the `--check-cert` result.
+read the `--check-cert` result, and [docs/compatibility.md](docs/compatibility.md) for which
+credentials and wallets work today.
 
 ### Environment variables
 
