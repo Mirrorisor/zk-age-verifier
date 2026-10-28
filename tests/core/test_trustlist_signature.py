@@ -162,3 +162,13 @@ def test_a_signature_over_only_part_of_the_list_is_refused(tmp_path: Path) -> No
     listing = _write(tmp_path, signer.sign(_list_with_ids(_self_signed()), "#svc"))
     with pytest.raises(ConfigError, match="no signed part covers the whole list"):
         load_anchors([TrustSource(etsi_xml=str(listing), etsi_xml_signer=str(signer.pem))])
+
+
+def test_a_signed_list_past_its_next_update_is_refused(tmp_path: Path) -> None:
+    signer = _Signer(tmp_path)
+    anchor = _self_signed()
+    xml = _etsi_xml(anchor, next_update="<dateTime>2000-01-01T00:00:00Z</dateTime>")
+    listing = _write(tmp_path, signer.sign(xml))
+    source = TrustSource(etsi_xml=str(listing), etsi_xml_signer=str(signer.pem))
+    with pytest.raises(ConfigError, match="expired"):
+        load_anchors([source])

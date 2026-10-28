@@ -57,6 +57,7 @@ of credential is refused until you point a service at it.
 | `etsi_xml_not_pinned` | An ETSI trusted list was loaded without `etsi_xml_sha256`. The line shows the digest; check the file, then set that digest to pin it. |
 | `etsi_service_skipped` | A service in the trusted list was ignored because its status is not `granted` or `recognisedatnationallevel`. |
 | `etsi_xml_signature_verified` | An ETSI trusted list's signature verified against the certificate named by `etsi_xml_signer`. The line shows that certificate's SHA-256 fingerprint. |
+| `etsi_xml_no_next_update` | An ETSI trusted list has no usable `NextUpdate` time, so its freshness cannot be checked. A list whose `NextUpdate` has passed stops startup instead ("expired"). |
 | `CryptographyDeprecationWarning … serial number which wasn't positive` | A configured anchor has serial number 0 or negative (the Multipaz TEST IACA does). It loads today; a future `cryptography` release will refuse it. The test suite has a test that fails when that happens. |
 
 ## The service will not start
