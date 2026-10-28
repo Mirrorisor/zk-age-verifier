@@ -331,6 +331,8 @@ def load_anchors(sources: list[TrustSource]) -> AnchorSet:
     for source in sources:
         if source.pem is not None:
             anchors.extend(_load_pem(source.pem))
+        elif source.etsi_lotl is not None:
+            anchors.extend(_load_lotl(source))
         else:
             anchors.extend(
                 _load_etsi_xml(
@@ -374,16 +376,7 @@ def _load_etsi_xml(
             ``pinned_sha256`` is given and the list's SHA-256 differs, and when
             ``signer`` is given and the list's signature does not verify.
     """
-    scheme = urlsplit(location).scheme
-    if scheme == "http":
-        raise ConfigError(
-            f"trust source url uses scheme {scheme!r}; https or a file path is required"
-        )
-    if scheme == "https":
-        with urlopen(location) as response:  # noqa: S310 - operator-configured startup fetch
-            data = response.read()
-    else:
-        data = Path(location).read_bytes()
+    data = _fetch(location)
     digest = hashlib.sha256(data).hexdigest()
     if pinned_sha256 is not None:
         if digest != pinned_sha256.lower():
@@ -394,9 +387,38 @@ def _load_etsi_xml(
     elif signer is None:
         log.warning("etsi_xml_not_pinned", location=location, sha256=digest)
     root = (
-        ElementTree.fromstring(data) if signer is None else _verified_list(data, signer, location)
+        ElementTree.fromstring(data)
+        if signer is None
+        else _verified_list(data, [_read_signer(signer)], location)
     )
     _check_next_update(root, location)
+    return _service_anchors(root)
+
+
+def _fetch(location: str) -> bytes:
+    """Read a list from a local path or an ``https`` URL.
+
+    Raises:
+        ConfigError: The location is an ``http`` URL (a trust list fetched over plain
+            http can be replaced in transit, so only ``https`` URLs and local file paths
+            are accepted), or it cannot be read: no network, no such file.
+    """
+    scheme = urlsplit(location).scheme
+    if scheme == "http":
+        raise ConfigError(
+            f"trust source url uses scheme {scheme!r}; https or a file path is required"
+        )
+    try:
+        if scheme == "https":
+            with urlopen(location) as response:  # noqa: S310 - operator-configured startup fetch
+                return bytes(response.read())
+        return Path(location).read_bytes()
+    except OSError as exc:
+        raise ConfigError(f"cannot read trust list {location}: {exc}") from exc
+
+
+def _service_anchors(root: ElementTree.Element) -> list[x509.Certificate]:
+    """Return the certificates of a list's active services."""
     anchors: list[x509.Certificate] = []
     # Only the certificates a service is listed under are anchors. The list's
     # own signer certificate (in ds:Signature) and the certificates of past
@@ -447,39 +469,59 @@ def _signature_reference_count(data: bytes, location: str) -> int:
     return max(count, 1)
 
 
-def _verified_list(data: bytes, signer_path: str, location: str) -> ElementTree.Element:
-    """Return the list element that a valid signature from ``signer_path`` covers.
+def _read_signer(signer_path: str) -> x509.Certificate:
+    """Read the PEM certificate that is expected to sign a list.
+
+    Raises:
+        ConfigError: The file cannot be read or is not a PEM certificate.
+    """
+    try:
+        return x509.load_pem_x509_certificate(Path(signer_path).read_bytes())
+    except (OSError, ValueError) as exc:
+        raise ConfigError(f"cannot read list signer certificate {signer_path}: {exc}") from exc
+
+
+def _verified_list(
+    data: bytes, signers: list[x509.Certificate], location: str
+) -> ElementTree.Element:
+    """Return the list element that a valid signature from one of ``signers`` covers.
 
     The anchors are read from the signed bytes the verifier returns, not from the
     downloaded file, so unsigned content added around a valid signature is never read.
+    A list may name several signer certificates (a national list's pointer can carry
+    more than one); the signature must verify against one of them.
 
     Raises:
-        ConfigError: The signer certificate cannot be read, the signature does not verify
-            against exactly that certificate, or no verified reference covers the whole list.
+        ConfigError: No signer certificate was given, the signature does not verify
+            against any of them, or no verified reference covers the whole list.
     """
-    try:
-        signer = x509.load_pem_x509_certificate(Path(signer_path).read_bytes())
-    except (OSError, ValueError) as exc:
-        raise ConfigError(f"cannot read list signer certificate {signer_path}: {exc}") from exc
-    try:
-        references = _signature_reference_count(data, location)
-        verified = XMLVerifier().verify(
-            data,
-            x509_cert=signer,
-            expect_config=SignatureConfiguration(location="./", expect_references=references),
+    failure: Exception | None = None
+    for signer in signers:
+        try:
+            references = _signature_reference_count(data, location)
+            verified = XMLVerifier().verify(
+                data,
+                x509_cert=signer,
+                expect_config=SignatureConfiguration(location="./", expect_references=references),
+            )
+            for result in verified if isinstance(verified, list) else [verified]:
+                root = ElementTree.fromstring(result.signed_data)
+                if _local_name(root.tag) == _LIST_ROOT:
+                    log.info(
+                        "etsi_xml_signature_verified",
+                        location=location,
+                        signer_sha256=signer.fingerprint(hashes.SHA256()).hex(),
+                    )
+                    return root
+        except (SignXMLException, LxmlError, SyntaxError) as exc:
+            failure = exc
+            continue
+        raise ConfigError(
+            f"trust list {location} is signed, but no signed part covers the whole list"
         )
-        for result in verified if isinstance(verified, list) else [verified]:
-            root = ElementTree.fromstring(result.signed_data)
-            if _local_name(root.tag) == _LIST_ROOT:
-                log.info(
-                    "etsi_xml_signature_verified",
-                    location=location,
-                    signer_sha256=signer.fingerprint(hashes.SHA256()).hex(),
-                )
-                return root
-    except (SignXMLException, LxmlError, SyntaxError) as exc:
-        raise ConfigError(f"trust list {location} failed its signature check: {exc}") from exc
-    raise ConfigError(f"trust list {location} is signed, but no signed part covers the whole list")
+    if failure is None:
+        raise ConfigError(f"trust list {location} names no signer certificate")
+    raise ConfigError(f"trust list {location} failed its signature check: {failure}") from failure
 
 
 def _check_next_update(root: ElementTree.Element, location: str) -> None:
@@ -513,6 +555,88 @@ def _check_next_update(root: ElementTree.Element, location: str) -> None:
             )
         return
     log.warning("etsi_xml_no_next_update", location=location)
+
+
+_TSL_XML_MIME = "application/vnd.etsi.tsl+xml"
+_POINTER_FIELDS = frozenset({"TSLLocation", "SchemeTerritory", "MimeType"})
+
+
+def _text(element: ElementTree.Element) -> str:
+    """Return an element's text with all whitespace removed."""
+    return "".join("".join(element.itertext()).split())
+
+
+def _tsl_pointers(
+    root: ElementTree.Element,
+) -> dict[str, list[tuple[str, list[x509.Certificate]]]]:
+    """Read a list of trusted lists' pointers to national lists in XML form.
+
+    Returns each territory's pointers as (location, certificates that sign that list).
+    Pointers to other formats (PDF, HTML) are left out.
+    """
+    pointers: dict[str, list[tuple[str, list[x509.Certificate]]]] = {}
+    for pointer in root.iter():
+        if _local_name(pointer.tag) != "OtherTSLPointer":
+            continue
+        fields = {
+            _local_name(child.tag): _text(child)
+            for child in pointer.iter()
+            if _local_name(child.tag) in _POINTER_FIELDS
+        }
+        territory = fields.get("SchemeTerritory", "")
+        location = fields.get("TSLLocation", "")
+        if fields.get("MimeType") != _TSL_XML_MIME or not territory or not location:
+            continue
+        certificates: list[x509.Certificate] = []
+        for child in pointer.iter():
+            if _local_name(child.tag) == "X509Certificate" and child.text:
+                try:
+                    der = base64.b64decode(_text(child))
+                    certificates.append(x509.load_der_x509_certificate(der))
+                except ValueError:
+                    log.warning("etsi_lotl_bad_pointer_certificate", territory=territory)
+        pointers.setdefault(territory.upper(), []).append((location, certificates))
+    return pointers
+
+
+def _load_lotl(source: TrustSource) -> list[x509.Certificate]:
+    """Load anchors from the national lists a signed list of trusted lists points to.
+
+    The list of trusted lists must be signed by ``etsi_lotl_signer``. Each chosen
+    territory's national list is fetched from the address in the signed pointer and must
+    be signed by one of the certificates in that same pointer, so trust passes from the
+    one certificate the operator configured to each national list.
+
+    Raises:
+        ConfigError: A signature, freshness or address check fails, or a chosen territory
+            has no XML list in the pointers. Nothing is loaded in part.
+    """
+    location = cast(str, source.etsi_lotl)
+    signer = _read_signer(cast(str, source.etsi_lotl_signer))
+    root = _verified_list(_fetch(location), [signer], location)
+    _check_next_update(root, location)
+    pointers = _tsl_pointers(root)
+    anchors: list[x509.Certificate] = []
+    chosen = cast(list[str], source.etsi_lotl_territories)
+    for territory in sorted({t.upper() for t in chosen}):
+        if territory not in pointers:
+            raise ConfigError(f"list of trusted lists {location} has no XML list for {territory}")
+        for national, signers in pointers[territory]:
+            if urlsplit(national).scheme != "https":
+                raise ConfigError(
+                    f"the pointer for {territory} is not an https address: {national}"
+                )
+            national_root = _verified_list(_fetch(national), signers, national)
+            _check_next_update(national_root, national)
+            found = _service_anchors(national_root)
+            log.info(
+                "etsi_lotl_list_loaded",
+                territory=territory,
+                location=national,
+                anchors=len(found),
+            )
+            anchors.extend(found)
+    return anchors
 
 
 def _service_status(information: ElementTree.Element) -> str:

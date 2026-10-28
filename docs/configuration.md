@@ -27,7 +27,7 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
 
 ## [trust]
 
-`[[trust.sources]]` entries form a non-empty list. Each entry sets exactly one of:
+`[[trust.sources]]` entries form a non-empty list. Each entry sets exactly one of `pem`, `etsi_xml` or `etsi_lotl`:
 
 - `pem` — a PEM file, or a directory whose `*.pem` files are all loaded.
 - `etsi_xml` — an ETSI trusted list, path or URL; the certificates listed in each service's
@@ -42,8 +42,22 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
     refused.
 
   With neither, the service logs an `etsi_xml_not_pinned` warning that shows the digest.
-  The signer check does not look at the list's `NextUpdate` date, so an old but genuinely
-  signed list is still accepted; pin the digest as well if that matters to you.
+  Whatever else you set, a list whose own `NextUpdate` time has passed is refused; a list
+  with no usable `NextUpdate` loads with an `etsi_xml_no_next_update` warning.
+- `etsi_lotl` — a signed ETSI list of trusted lists (path or URL), such as the EU's
+  `https://ec.europa.eu/tools/lotl/eu-lotl.xml`. It needs two more keys:
+  - `etsi_lotl_signer` — a PEM file holding the certificate that signs the list of trusted
+    lists. Get it from a source you trust (the EU publishes the signing certificates in the
+    Official Journal); the service logs the certificate's SHA-256 fingerprint when it
+    verifies, so you can compare. The list's XML signature must verify against it.
+  - `etsi_lotl_territories` — the two-letter country codes whose national lists to load,
+    for example `["EE", "LV"]`. Only these are fetched.
+
+  Each chosen national list is fetched (over https only) from the address in the signed
+  pointer, and its signature must verify against one of the certificates in that same
+  pointer. Its services become anchors under the same status rules as `etsi_xml`. If any
+  chosen list is missing, unsigned, wrongly signed or past its `NextUpdate`, startup stops;
+  nothing is loaded in part.
 
 Every listed anchor is authorized to vouch for age credentials. Sources that resolve to
 zero anchors fail startup.

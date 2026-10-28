@@ -104,7 +104,7 @@ class ServiceConfig(BaseModel):
 
 
 class TrustSource(BaseModel):
-    """One ``[trust]`` source: exactly one of ``pem``, ``etsi_xml``."""
+    """One ``[trust]`` source: exactly one of ``pem``, ``etsi_xml``, ``etsi_lotl``."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -117,6 +117,13 @@ class TrustSource(BaseModel):
     # signature must verify against exactly this certificate, and only the signed content
     # is read.
     etsi_xml_signer: str | None = None
+    # A signed ETSI list of trusted lists (path or URL). Its signature must verify against
+    # the certificate in etsi_lotl_signer; the national lists for the chosen two-letter
+    # territories are then fetched from its signed pointers and each must verify against
+    # the certificates in its own pointer.
+    etsi_lotl: str | None = None
+    etsi_lotl_signer: str | None = None
+    etsi_lotl_territories: list[str] | None = None
 
     @model_validator(mode="after")
     def _validate_single_source(self) -> "TrustSource":
@@ -125,13 +132,30 @@ class TrustSource(BaseModel):
             raise ValueError("etsi_xml_sha256 can only be used together with etsi_xml")
         if self.etsi_xml_signer is not None and self.etsi_xml is None:
             raise ValueError("etsi_xml_signer can only be used together with etsi_xml")
+        if self.etsi_lotl is None:
+            if self.etsi_lotl_signer is not None or self.etsi_lotl_territories is not None:
+                raise ValueError(
+                    "etsi_lotl_signer and etsi_lotl_territories can only be used with etsi_lotl"
+                )
+        else:
+            territories = self.etsi_lotl_territories or []
+            if self.etsi_lotl_signer is None or not territories:
+                raise ValueError(
+                    "etsi_lotl needs etsi_lotl_signer and a non-empty etsi_lotl_territories"
+                )
+            if not all(len(t) == 2 and t.isascii() and t.isalpha() for t in territories):
+                raise ValueError("etsi_lotl_territories must be two-letter country codes")
         set_keys = [
             key
-            for key, value in (("pem", self.pem), ("etsi_xml", self.etsi_xml))
+            for key, value in (
+                ("pem", self.pem),
+                ("etsi_xml", self.etsi_xml),
+                ("etsi_lotl", self.etsi_lotl),
+            )
             if value is not None
         ]
         if len(set_keys) != 1:
-            raise ValueError("each trust source must set exactly one of pem, etsi_xml")
+            raise ValueError("each trust source must set exactly one of pem, etsi_xml, etsi_lotl")
         return self
 
 

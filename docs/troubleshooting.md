@@ -58,6 +58,8 @@ of credential is refused until you point a service at it.
 | `etsi_service_skipped` | A service in the trusted list was ignored because its status is not `granted` or `recognisedatnationallevel`. |
 | `etsi_xml_signature_verified` | An ETSI trusted list's signature verified against the certificate named by `etsi_xml_signer`. The line shows that certificate's SHA-256 fingerprint. |
 | `etsi_xml_no_next_update` | An ETSI trusted list has no usable `NextUpdate` time, so its freshness cannot be checked. A list whose `NextUpdate` has passed stops startup instead ("expired"). |
+| `etsi_lotl_list_loaded` | A national list was loaded through an `etsi_lotl` source. The line shows the territory, the address and how many anchors it gave. |
+| `etsi_lotl_bad_pointer_certificate` | A pointer in the list of trusted lists carries a certificate that cannot be read. It is skipped; the national list must verify against another certificate in the same pointer. |
 | `CryptographyDeprecationWarning … serial number which wasn't positive` | A configured anchor has serial number 0 or negative (the Multipaz TEST IACA does). It loads today; a future `cryptography` release will refuse it. The test suite has a test that fails when that happens. |
 
 ## The service will not start
