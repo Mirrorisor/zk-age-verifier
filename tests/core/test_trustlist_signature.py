@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding
 from lxml import etree
-from signxml.algorithms import DigestAlgorithm, SignatureMethod, methods
+from signxml.algorithms import DigestAlgorithm, SignatureConstructionMethod, SignatureMethod
 from signxml.signer import XMLSigner
 from structlog.testing import capture_logs
 
@@ -32,7 +32,7 @@ class _Signer:
     def sign(self, xml: bytes, reference_uri: str | list[str] | None = None) -> bytes:
         """Return ``xml`` with an enveloped ECDSA signature from this signer."""
         signer = XMLSigner(
-            method=methods.enveloped,
+            method=SignatureConstructionMethod.enveloped,
             signature_algorithm=SignatureMethod.ECDSA_SHA256,
             digest_algorithm=DigestAlgorithm.SHA256,
         )
