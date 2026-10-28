@@ -152,7 +152,7 @@ async def test_licence_profile_verifies_and_binds_the_proof_to_the_licence(
         seen["doc_type"] = args[5]
         seen["requested"] = args[2]
 
-    monkeypatch.setattr(mdoc_zk.mdoc, "RequestedAttribute", lambda *fields: fields)
+    monkeypatch.setattr(mdoc, "RequestedAttribute", lambda *fields: fields)
     monkeypatch.setattr(held.longfellow, "verify", _record)
     body = _body(session, _mdl_response(held, chain))
     verdict = await verify_response(session, held, AnchorSet((cert,)), body, mdl_config)
