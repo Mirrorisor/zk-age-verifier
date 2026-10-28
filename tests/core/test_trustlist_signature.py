@@ -9,7 +9,8 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding
 from lxml import etree
-from signxml import DigestAlgorithm, SignatureMethod, XMLSigner, methods
+from signxml.algorithms import DigestAlgorithm, SignatureMethod, methods
+from signxml.signer import XMLSigner
 from structlog.testing import capture_logs
 
 from tests.core.test_trustlist import _cert, _etsi_xml, _self_signed

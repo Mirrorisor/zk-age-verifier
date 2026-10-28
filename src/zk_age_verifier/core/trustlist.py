@@ -29,8 +29,8 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding
-from signxml import SignatureConfiguration, XMLVerifier
 from signxml.exceptions import SignXMLException
+from signxml.verifier import SignatureConfiguration, XMLVerifier
 
 from zk_age_verifier.config import ConfigError, TrustSource
 
