@@ -29,6 +29,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding
+from lxml.etree import LxmlError
 from signxml.exceptions import SignXMLException
 from signxml.verifier import SignatureConfiguration, XMLVerifier
 
@@ -475,7 +476,7 @@ def _verified_list(data: bytes, signer_path: str, location: str) -> ElementTree.
                     signer_sha256=signer.fingerprint(hashes.SHA256()).hex(),
                 )
                 return root
-    except (SignXMLException, SyntaxError) as exc:
+    except (SignXMLException, LxmlError, SyntaxError) as exc:
         raise ConfigError(f"trust list {location} failed its signature check: {exc}") from exc
     raise ConfigError(f"trust list {location} is signed, but no signed part covers the whole list")
 
