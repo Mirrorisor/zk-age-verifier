@@ -7,9 +7,10 @@ key coordinates are returned, the only value the trust layer feeds the proof
 check. The credential's own issuer signature is validated inside the ZK proof.
 This module only decides which issuer key the proof is allowed to satisfy.
 
-ETSI list handling extracts certificates from the XML and stops there: TSL
-semantics and XAdES signature validation are out of scope, so an ETSI source is
-trusted by its pinned path or URL, not by a checked list signature.
+ETSI list handling extracts certificates from the XML. TSL semantics beyond the
+service status are out of scope. An ETSI source is trusted by its pinned digest, by a
+checked signature from one named signer certificate, or both; with neither, the service
+logs a warning.
 """
 
 import base64
@@ -28,6 +29,8 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding
+from signxml import SignatureConfiguration, XMLVerifier
+from signxml.exceptions import SignXMLException
 
 from zk_age_verifier.config import ConfigError, TrustSource
 
@@ -328,7 +331,11 @@ def load_anchors(sources: list[TrustSource]) -> AnchorSet:
         if source.pem is not None:
             anchors.extend(_load_pem(source.pem))
         else:
-            anchors.extend(_load_etsi_xml(cast(str, source.etsi_xml), source.etsi_xml_sha256))
+            anchors.extend(
+                _load_etsi_xml(
+                    cast(str, source.etsi_xml), source.etsi_xml_sha256, source.etsi_xml_signer
+                )
+            )
     if not anchors:
         raise ConfigError("trust sources resolved to no anchors; check the [trust] source paths")
     return AnchorSet(tuple(anchors))
@@ -349,17 +356,22 @@ def _load_pem(location: str) -> list[x509.Certificate]:
 _ACTIVE_SERVICE_STATUSES = frozenset({"granted", "recognisedatnationallevel"})
 
 
-def _load_etsi_xml(location: str, pinned_sha256: str | None = None) -> list[x509.Certificate]:
+def _load_etsi_xml(
+    location: str, pinned_sha256: str | None = None, signer: str | None = None
+) -> list[x509.Certificate]:
     """Fetch and parse an ETSI list from a path or URL, extracting its service certificates.
 
-    The list's own signature is not verified. Pin the file's SHA-256 with
-    ``pinned_sha256`` to make sure it is the file the operator reviewed.
+    Pin the file's SHA-256 with ``pinned_sha256`` to make sure it is the file the operator
+    reviewed. Name the list's signer certificate with ``signer`` (a PEM file) to require a
+    valid XML signature from exactly that certificate; the anchors are then read from the
+    signed bytes, never from the downloaded file.
 
     Raises:
         ConfigError: The location is an ``http`` URL. A trust list fetched
             over plain http can be replaced in transit, so only ``https``
             URLs and local file paths are accepted. Also raised when
-            ``pinned_sha256`` is given and the list's SHA-256 differs.
+            ``pinned_sha256`` is given and the list's SHA-256 differs, and when
+            ``signer`` is given and the list's signature does not verify.
     """
     scheme = urlsplit(location).scheme
     if scheme == "http":
@@ -372,13 +384,17 @@ def _load_etsi_xml(location: str, pinned_sha256: str | None = None) -> list[x509
     else:
         data = Path(location).read_bytes()
     digest = hashlib.sha256(data).hexdigest()
-    if pinned_sha256 is None:
+    if pinned_sha256 is not None:
+        if digest != pinned_sha256.lower():
+            raise ConfigError(
+                f"trust list {location} has SHA-256 {digest}, "
+                f"not the pinned {pinned_sha256.lower()}"
+            )
+    elif signer is None:
         log.warning("etsi_xml_not_pinned", location=location, sha256=digest)
-    elif digest != pinned_sha256.lower():
-        raise ConfigError(
-            f"trust list {location} has SHA-256 {digest}, not the pinned {pinned_sha256.lower()}"
-        )
-    root = ElementTree.fromstring(data)
+    root = (
+        ElementTree.fromstring(data) if signer is None else _verified_list(data, signer, location)
+    )
     anchors: list[x509.Certificate] = []
     # Only the certificates a service is listed under are anchors. The list's
     # own signer certificate (in ds:Signature) and the certificates of past
@@ -399,6 +415,69 @@ def _load_etsi_xml(location: str, pinned_sha256: str | None = None) -> list[x509
                     der = base64.b64decode("".join(element.text.split()))
                     anchors.append(x509.load_der_x509_certificate(der))
     return anchors
+
+
+# A list's signature references its whole content, and XAdES adds one for the signing
+# properties. More than a handful is not a real list.
+_MAX_SIGNATURE_REFERENCES = 5
+_LIST_ROOT = "TrustServiceStatusList"
+
+
+def _children(element: ElementTree.Element, name: str) -> list[ElementTree.Element]:
+    """Return an element's direct children with this local name."""
+    return [child for child in element if _local_name(child.tag) == name]
+
+
+def _signature_reference_count(data: bytes, location: str) -> int:
+    """Count the references in the list's own ``SignedInfo``.
+
+    The count only tells the verifier how many references to insist on; every one of them
+    must verify, so a list cannot gain trust by adding or hiding references.
+
+    Raises:
+        ConfigError: The signature carries more references than a real list does.
+    """
+    signatures = _children(ElementTree.fromstring(data), "Signature")
+    signed_infos = _children(signatures[0], "SignedInfo") if signatures else []
+    count = len(_children(signed_infos[0], "Reference")) if signed_infos else 1
+    if count > _MAX_SIGNATURE_REFERENCES:
+        raise ConfigError(f"trust list {location} signature has {count} references; refusing")
+    return max(count, 1)
+
+
+def _verified_list(data: bytes, signer_path: str, location: str) -> ElementTree.Element:
+    """Return the list element that a valid signature from ``signer_path`` covers.
+
+    The anchors are read from the signed bytes the verifier returns, not from the
+    downloaded file, so unsigned content added around a valid signature is never read.
+
+    Raises:
+        ConfigError: The signer certificate cannot be read, the signature does not verify
+            against exactly that certificate, or no verified reference covers the whole list.
+    """
+    try:
+        signer = x509.load_pem_x509_certificate(Path(signer_path).read_bytes())
+    except (OSError, ValueError) as exc:
+        raise ConfigError(f"cannot read list signer certificate {signer_path}: {exc}") from exc
+    try:
+        references = _signature_reference_count(data, location)
+        verified = XMLVerifier().verify(
+            data,
+            x509_cert=signer,
+            expect_config=SignatureConfiguration(location="./", expect_references=references),
+        )
+        for result in verified if isinstance(verified, list) else [verified]:
+            root = ElementTree.fromstring(result.signed_data)
+            if _local_name(root.tag) == _LIST_ROOT:
+                log.info(
+                    "etsi_xml_signature_verified",
+                    location=location,
+                    signer_sha256=signer.fingerprint(hashes.SHA256()).hex(),
+                )
+                return root
+    except (SignXMLException, SyntaxError) as exc:
+        raise ConfigError(f"trust list {location} failed its signature check: {exc}") from exc
+    raise ConfigError(f"trust list {location} is signed, but no signed part covers the whole list")
 
 
 def _service_status(information: ElementTree.Element) -> str:

@@ -33,6 +33,7 @@ dependencies = [
     "pydantic-settings",
     "pyhpke>=0.6.5",
     "pylongfellow==0.5.2",
+    "signxml>=5.2",
     "structlog",
 ]
 
@@ -80,6 +81,10 @@ convention = "google"
 strict = true
 plugins = ["pydantic.mypy"]
 files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["lxml", "lxml.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -32,11 +32,18 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
 - `pem` — a PEM file, or a directory whose `*.pem` files are all loaded.
 - `etsi_xml` — an ETSI trusted list, path or URL; the certificates listed in each service's
   `ServiceDigitalIdentity` become anchors, but only for services whose status is `granted`
-  or `recognisedatnationallevel` (others are skipped, with a log line). The list's own
-  signature is not verified, and neither is its signer. The signer's certificate and the
-  certificates of past service versions are not anchors. Add `etsi_xml_sha256` (the SHA-256
-  of the file you reviewed, in hex) to refuse any other content; without it the service logs
-  an `etsi_xml_not_pinned` warning that shows the digest to pin.
+  or `recognisedatnationallevel` (others are skipped, with a log line). The signer's
+  certificate and the certificates of past service versions are not anchors. Protect the
+  list in either or both of two ways:
+  - `etsi_xml_signer` — a PEM file holding the certificate that signs the list. The list's
+    XML signature must then verify against exactly that certificate, and the anchors are read
+    only from the signed content. A missing, wrong or broken signature stops startup.
+  - `etsi_xml_sha256` — the SHA-256 of the file you reviewed, in hex. Any other content is
+    refused.
+
+  With neither, the service logs an `etsi_xml_not_pinned` warning that shows the digest.
+  The signer check does not look at the list's `NextUpdate` date, so an old but genuinely
+  signed list is still accepted; pin the digest as well if that matters to you.
 
 Every listed anchor is authorized to vouch for age credentials. Sources that resolve to
 zero anchors fail startup.

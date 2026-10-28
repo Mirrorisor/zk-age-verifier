@@ -56,12 +56,23 @@ of credential is refused until you point a service at it.
 | `key_usage_unreadable` | Even the fallback reader could not read the key usage, so the certificate is treated as not asserting it. |
 | `etsi_xml_not_pinned` | An ETSI trusted list was loaded without `etsi_xml_sha256`. The line shows the digest; check the file, then set that digest to pin it. |
 | `etsi_service_skipped` | A service in the trusted list was ignored because its status is not `granted` or `recognisedatnationallevel`. |
+| `etsi_xml_signature_verified` | An ETSI trusted list's signature verified against the certificate named by `etsi_xml_signer`. The line shows that certificate's SHA-256 fingerprint. |
 | `CryptographyDeprecationWarning … serial number which wasn't positive` | A configured anchor has serial number 0 or negative (the Multipaz TEST IACA does). It loads today; a future `cryptography` release will refuse it. The test suite has a test that fails when that happens. |
 
 ## The service will not start
 
 - *"not the pinned"* — the ETSI list's SHA-256 differs from `etsi_xml_sha256`. Re-review the
   file, then update the pin.
+- *"failed its signature check"* — the list's XML signature did not verify against the
+  certificate in `etsi_xml_signer`. The rest of the message is the verifier's reason: a digest
+  mismatch means the content changed after signing, a signature failure means a different
+  signer or a changed signature, and "expected to find N references" means the signature does
+  not have the shape the service expected. Do not loosen the check to make a real list pass;
+  keep the SHA-256 pin as the protection and report the exact message.
+- *"no signed part covers the whole list"* — the signature is valid but covers only a piece
+  of the file, not the list itself. Treat the file as untrusted.
+- *"cannot read list signer certificate"* — `etsi_xml_signer` is not a readable PEM
+  certificate. Inside Docker, the path is the one in the container.
 - *"cannot read certificate file"* / *"does not contain a PEM, DER or base64-DER certificate"*
   (from `--check-cert`) — wrong path or format. Inside Docker, the path is the one in the
   container.
