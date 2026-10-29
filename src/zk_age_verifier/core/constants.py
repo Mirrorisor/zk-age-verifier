@@ -30,7 +30,19 @@ ISO_MDL = CredentialProfile(
 )
 """An ISO/IEC 18013-5 mobile driving licence, asked for ``age_over_NN`` elements."""
 
-PROFILES: dict[str, CredentialProfile] = {EU_AV.name: EU_AV, ISO_MDL.name: ISO_MDL}
+PHOTO_ID = CredentialProfile(
+    name="photo-id", doc_type="org.iso.23220.photoid.1", namespace="org.iso.23220.1"
+)
+"""An ISO/IEC 23220 Photo ID, often made from a passport; ``age_over_NN`` in ``org.iso.23220.1``."""
+
+GOOGLE_ID_PASS = CredentialProfile(
+    name="google-id-pass", doc_type="com.google.wallet.idcard.1", namespace="org.iso.18013.5.1"
+)
+"""A Google Wallet ID pass, made from a passport; its claims use the driving-licence namespace."""
+
+PROFILES: dict[str, CredentialProfile] = {
+    profile.name: profile for profile in (EU_AV, ISO_MDL, PHOTO_ID, GOOGLE_ID_PASS)
+}
 """Every selectable profile, by name."""
 
 DOC_TYPE = EU_AV.doc_type

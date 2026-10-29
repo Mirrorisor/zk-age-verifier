@@ -13,7 +13,7 @@ from pylongfellow import mdoc
 
 from tests.conftest import ORIGIN, render_config
 from zk_age_verifier.config import Config, load_config
-from zk_age_verifier.core.constants import DOC_TYPE, EU_AV, ISO_MDL
+from zk_age_verifier.core.constants import DOC_TYPE, EU_AV, ISO_MDL, PHOTO_ID
 from zk_age_verifier.core.encoding import b64url_encode
 from zk_age_verifier.core.engine import mdoc_zk
 from zk_age_verifier.core.engine.circuits import HeldCircuit
@@ -389,3 +389,34 @@ async def test_engine_error(
     body = _body(session, _device_response(held, chain))
     verdict = await verify_response(session, held, AnchorSet((cert,)), body, config)
     assert verdict == VerdictFailed(state="failed", reason="engine-error")
+
+
+async def test_a_photo_id_verifies_with_its_own_doctype_and_namespace(
+    session: Session, held: HeldCircuit, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "photo-config.toml"
+    path.write_text(render_config(credential=["eu-av", "iso-mdl", "photo-id"]))
+    config = load_config(path)
+    cert, chain = _anchor_cert()
+    seen: dict[str, object] = {}
+
+    def _record(*args: object, **_kwargs: object) -> None:
+        seen["doc_type"] = args[5]
+        seen["requested"] = args[2]
+
+    monkeypatch.setattr(mdoc, "RequestedAttribute", lambda *fields: fields)
+    monkeypatch.setattr(held.longfellow, "verify", _record)
+    response = _device_response(
+        held,
+        chain,
+        docType=PHOTO_ID.doc_type,
+        issuerSigned={
+            PHOTO_ID.namespace: [{"elementIdentifier": "age_over_18", "elementValue": True}]
+        },
+    )
+    verdict = await verify_response(
+        session, held, AnchorSet((cert,)), _body(session, response), config
+    )
+    assert isinstance(verdict, VerdictVerified)
+    assert seen["doc_type"] == PHOTO_ID.doc_type
+    assert seen["requested"] == [(PHOTO_ID.namespace, "age_over_18", cbor2.dumps(True))]

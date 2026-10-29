@@ -15,6 +15,8 @@ The credential kind is set by the `credential` key in the `[service]` table (see
 | --- | --- | --- | --- |
 | `eu-av` (default) | `eu.europa.ec.av.1` | `eu.europa.ec.av.1` | The EU age-verification credential. |
 | `iso-mdl` | `org.iso.18013.5.1.mDL` | `org.iso.18013.5.1` | An ISO/IEC 18013-5 driving licence. |
+| `photo-id` | `org.iso.23220.photoid.1` | `org.iso.23220.1` | An ISO/IEC 23220 Photo ID, often made from a passport. Not yet tested with a wallet. |
+| `google-id-pass` | `com.google.wallet.idcard.1` | `org.iso.18013.5.1` | A Google Wallet ID pass, made from a passport. Not tested: needs Google's issuer certificate as an anchor. |
 
 A service accepts the kinds listed in `credential`; a list such as `["eu-av", "iso-mdl"]`
 accepts either. Presenting a kind that is not listed ends in `claim-mismatch` (see

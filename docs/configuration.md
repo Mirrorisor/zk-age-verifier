@@ -20,8 +20,10 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
 - `credential` (default `eu-av`) — the kind of credential this service accepts: `eu-av` for the
   EU age-verification credential (doctype `eu.europa.ec.av.1`), or `iso-mdl` for an ISO/IEC
   18013-5 mobile driving licence (doctype `org.iso.18013.5.1.mDL`, claims in the
-  `org.iso.18013.5.1` namespace). To accept both, give a list: `credential = ["eu-av",
-  "iso-mdl"]`. The request then asks for any one of them (an ISO/IEC 18013-5 second-edition
+  `org.iso.18013.5.1` namespace). Two passport-based kinds are also known: `photo-id` (ISO/IEC
+  23220 Photo ID) and `google-id-pass` (Google Wallet ID pass); see
+  [Compatibility](compatibility.md). To accept several, give a list: `credential = ["eu-av",
+  "iso-mdl", "photo-id"]`. The request then asks for any one of them (an ISO/IEC 18013-5 second-edition
   use case with one document set per kind), and the holder chooses which document to show
   from those they hold. The check is still
   exactly `age_over_18`. A licence is only accepted if its issuer's
