@@ -102,8 +102,9 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
   EU age-verification credential (doctype `eu.europa.ec.av.1`), or `iso-mdl` for an ISO/IEC
   18013-5 mobile driving licence (doctype `org.iso.18013.5.1.mDL`, claims in the
   `org.iso.18013.5.1` namespace). To accept both, give a list: `credential = ["eu-av",
-  "iso-mdl"]`. The wallet is then offered each kind as an alternative, in that order, and
-  answers with one (Multipaz offers the first kind the holder has). The check is still
+  "iso-mdl"]`. The request then asks for any one of them (an ISO/IEC 18013-5 second-edition
+  use case with one document set per kind), and the holder chooses which document to show
+  from those they hold. The check is still
   exactly `age_over_18`. A licence is only accepted if its issuer's
   certificate chains to a `[trust]` anchor you configured, so an `iso-mdl` service needs the
   licence issuer's root, not the EU one.

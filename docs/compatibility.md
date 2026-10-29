@@ -18,8 +18,9 @@ The credential kind is set by the `credential` key in the `[service]` table (see
 
 A service accepts the kinds listed in `credential`; a list such as `["eu-av", "iso-mdl"]`
 accepts either. Presenting a kind that is not listed ends in `claim-mismatch` (see
-[Troubleshooting](troubleshooting.md)). With a list, each kind is a separate entry in the
-Digital Credentials request; Multipaz offers the first entry the holder can answer.
+[Troubleshooting](troubleshooting.md)). With a list, one request carries a document
+request per kind and a `deviceRequestInfo` use case saying any one of them will do;
+Multipaz then lets the holder choose among the documents they hold that match.
 
 ## Limits of the pinned circuit
 

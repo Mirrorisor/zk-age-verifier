@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fork only: with several credential kinds, the offer is now one `DeviceRequest` with a document request per kind and a `deviceRequestInfo` use case (ISO/IEC 18013-5 second edition) whose document sets each name one of them, so the holder chooses which document to show. Before, each kind was a separate Digital Credentials request entry and Multipaz offered only the first one the holder could answer.
 - Fork only: `[service] credential` also takes a list, such as `["eu-av", "iso-mdl"]`, so one service accepts either kind. The offer carries one Digital Credentials request entry per kind, all sharing the session's `EncryptionInfo`; the response's doctype picks the profile the proof is checked against. A single name works as before.
 - Fork only: an `etsi_lotl` trust source loads a signed ETSI list of trusted lists (such as the EU's) and, for the two-letter territories named in `etsi_lotl_territories`, fetches each national list over https from the address in the signed pointer. The list of trusted lists must verify against the certificate in `etsi_lotl_signer`; each national list must verify against a certificate in its own pointer and must not be past its `NextUpdate`. Any failure stops startup; nothing is loaded in part.
 - Fork only: an `etsi_xml` trust source (signed or not) is refused at startup once the list's own `NextUpdate` time has passed, because a stale list may be an old copy replayed to trust a withdrawn service. A list with no usable `NextUpdate` loads, with an `etsi_xml_no_next_update` warning.

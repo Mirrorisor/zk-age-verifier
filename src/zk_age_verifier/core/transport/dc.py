@@ -68,27 +68,39 @@ def build_device_request(
     spec: CircuitSpec,
     zk_system_id: str,
     claims: Sequence[str],
-    profile: CredentialProfile = EU_AV,
+    profiles: CredentialProfile | Sequence[CredentialProfile] = EU_AV,
 ) -> bytes:
     """Build the CBOR ``DeviceRequest`` carrying the ZK ask.
+
+    One ``DocRequest`` is built per credential profile. With more than one, a
+    ``deviceRequestInfo`` (ISO/IEC 18013-5 second edition) holds one mandatory use case
+    whose document sets each name a single ``DocRequest``: the holder must present one
+    of the documents, and the wallet lets them choose which (Multipaz offers every
+    document set the holder can satisfy). With one profile no ``deviceRequestInfo`` is
+    sent, as before.
 
     Args:
         spec: The held circuit's spec; its fields populate ``params``.
         zk_system_id: The circuit-identity string advertised in ``systemSpecs``.
         claims: Requested claim identifiers, one namespace entry each.
-        profile: The credential profile; its doctype and claim namespace are asked for.
+        profiles: The credential profile, or the alternatives the holder may choose
+            from; each one's doctype and claim namespace are asked for.
 
     Returns:
         CBOR bytes of the ``DeviceRequest``.
 
     Raises:
         ValueError: ``len(claims)`` differs from ``spec.num_attributes``; the
-            wallet would find no circuit match and fail the request silently.
+            wallet would find no circuit match and fail the request silently. Also
+            raised when no profile is given.
     """
     if len(claims) != spec.num_attributes:
         raise ValueError(
             f"claim count {len(claims)} must equal spec.num_attributes {spec.num_attributes}"
         )
+    alternatives = (profiles,) if isinstance(profiles, CredentialProfile) else tuple(profiles)
+    if not alternatives:
+        raise ValueError("a device request needs at least one credential profile")
     system_spec = {
         "zkSystemId": zk_system_id,
         "system": spec.system,
@@ -105,37 +117,41 @@ def build_device_request(
     # itemsRequest["requestInfo"], both @ 0.99.0; AV profile §A.11 agrees). A
     # DocRequest-level sibling key is never parsed; the wallet then silently
     # falls back to a standard presentation (observed on-device, 2026-07-14).
-    items_request = {
-        "docType": profile.doc_type,
-        "nameSpaces": {profile.namespace: {claim: False for claim in claims}},
-        "requestInfo": {"zkRequest": {"systemSpecs": [system_spec], "zkRequired": True}},
-    }
-    doc_request = {"itemsRequest": cbor2.CBORTag(24, cbor2.dumps(items_request))}
-    return cbor2.dumps({"version": "1.1", "docRequests": [doc_request]})
+    doc_requests: list[dict[str, object]] = []
+    for profile in alternatives:
+        items_request = {
+            "docType": profile.doc_type,
+            "nameSpaces": {profile.namespace: {claim: False for claim in claims}},
+            "requestInfo": {"zkRequest": {"systemSpecs": [system_spec], "zkRequired": True}},
+        }
+        doc_requests.append({"itemsRequest": cbor2.CBORTag(24, cbor2.dumps(items_request))})
+    device_request: dict[str, object] = {"version": "1.1", "docRequests": doc_requests}
+    if len(doc_requests) > 1:
+        # Multipaz reads this as tag-24 encoded CBOR (DeviceRequest.kt, fromDataItem,
+        # and the Credential Manager matcher, Request.cpp), on version 1.1 and later.
+        use_case = {
+            "mandatory": True,
+            "documentSets": [[index] for index in range(len(doc_requests))],
+        }
+        device_request["deviceRequestInfo"] = cbor2.CBORTag(
+            24, cbor2.dumps({"useCases": [use_case]})
+        )
+    return cbor2.dumps(device_request)
 
 
-def build_dc_request(
-    device_requests: bytes | Sequence[bytes], encryption_info: bytes
-) -> dict[str, object]:
+def build_dc_request(device_request: bytes, encryption_info: bytes) -> dict[str, object]:
     """Assemble the ``navigator.credentials.get`` argument.
 
-    Each ``DeviceRequest`` becomes one entry of ``digital.requests``: alternatives,
-    of which the wallet answers one (Multipaz offers the first entry the holder can
-    satisfy). Every entry carries the same ``EncryptionInfo``, so the response opens
-    and binds to the transcript whichever entry was answered. The session store keeps
-    ``data.encryptionInfo`` verbatim; the transcript hashes that exact string, so it
-    is never re-encoded from the key.
+    The session store keeps ``data.encryptionInfo`` verbatim; the transcript
+    hashes that exact string, so it is never re-encoded from the key.
 
     Args:
-        device_requests: One CBOR ``DeviceRequest``, or several alternatives in order.
+        device_request: CBOR ``DeviceRequest`` bytes.
         encryption_info: CBOR ``EncryptionInfo`` bytes.
 
     Returns:
-        The DC-API request dict with every payload as an unpadded base64url string.
+        The DC-API request dict with both payloads as unpadded base64url strings.
     """
-    if isinstance(device_requests, bytes):
-        device_requests = [device_requests]
-    encryption_info_b64 = b64url_encode(encryption_info)
     return {
         "digital": {
             "requests": [
@@ -143,10 +159,9 @@ def build_dc_request(
                     "protocol": "org-iso-mdoc",
                     "data": {
                         "deviceRequest": b64url_encode(device_request),
-                        "encryptionInfo": encryption_info_b64,
+                        "encryptionInfo": b64url_encode(encryption_info),
                     },
                 }
-                for device_request in device_requests
             ]
         },
         "mediation": "required",
@@ -301,16 +316,11 @@ class DcTransport:
 
         Args:
             held: The resolved circuit whose identity every request advertises.
-            profiles: The credential profile, or the alternatives in the order the
-                wallet is offered them.
-
-        Raises:
-            ValueError: No profile was given.
+            profiles: The credential profile, or the alternatives the holder may choose
+                from.
         """
         self._held = held
-        self._profiles = (profiles,) if isinstance(profiles, CredentialProfile) else tuple(profiles)
-        if not self._profiles:
-            raise ValueError("a transport needs at least one credential profile")
+        self._profiles = profiles
 
     def build_offer(self, claims: Sequence[str]) -> tuple[DcSessionState, dict[str, object]]:
         """Build the ``navigator.credentials.get`` offer and its session state.
@@ -324,11 +334,10 @@ class DcTransport:
         private_key = ec.generate_private_key(ec.SECP256R1())
         nonce = secrets.token_bytes(_NONCE_BYTES)
         encryption_info = build_encryption_info(nonce, private_key.public_key())
-        device_requests = [
-            build_device_request(self._held.spec, self._held.zk_system_id, claims, profile)
-            for profile in self._profiles
-        ]
-        offer = build_dc_request(device_requests, encryption_info)
+        device_request = build_device_request(
+            self._held.spec, self._held.zk_system_id, claims, self._profiles
+        )
+        offer = build_dc_request(device_request, encryption_info)
         state = DcSessionState(
             private_key=private_key,
             encryption_info_b64=b64url_encode(encryption_info),
