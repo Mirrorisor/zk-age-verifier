@@ -16,8 +16,10 @@ The credential kind is set by the `credential` key in the `[service]` table (see
 | `eu-av` (default) | `eu.europa.ec.av.1` | `eu.europa.ec.av.1` | The EU age-verification credential. |
 | `iso-mdl` | `org.iso.18013.5.1.mDL` | `org.iso.18013.5.1` | An ISO/IEC 18013-5 driving licence. |
 
-A service accepts one kind at a time. Presenting the other kind ends in `claim-mismatch`
-(see [Troubleshooting](troubleshooting.md)).
+A service accepts the kinds listed in `credential`; a list such as `["eu-av", "iso-mdl"]`
+accepts either. Presenting a kind that is not listed ends in `claim-mismatch` (see
+[Troubleshooting](troubleshooting.md)). With a list, each kind is a separate entry in the
+Digital Credentials request; Multipaz offers the first entry the holder can answer.
 
 ## Limits of the pinned circuit
 

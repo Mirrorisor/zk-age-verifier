@@ -13,7 +13,7 @@ from pylongfellow import mdoc
 
 from tests.conftest import ORIGIN, render_config
 from zk_age_verifier.config import Config, load_config
-from zk_age_verifier.core.constants import DOC_TYPE, ISO_MDL
+from zk_age_verifier.core.constants import DOC_TYPE, EU_AV, ISO_MDL
 from zk_age_verifier.core.encoding import b64url_encode
 from zk_age_verifier.core.engine import mdoc_zk
 from zk_age_verifier.core.engine.circuits import HeldCircuit
@@ -159,6 +159,50 @@ async def test_licence_profile_verifies_and_binds_the_proof_to_the_licence(
     assert isinstance(verdict, VerdictVerified)
     assert seen["doc_type"] == "org.iso.18013.5.1.mDL"
     assert seen["requested"] == [("org.iso.18013.5.1", "age_over_18", cbor2.dumps(True))]
+
+
+@pytest.fixture
+def both_config(tmp_path: Path) -> Config:
+    path = tmp_path / "both-config.toml"
+    path.write_text(render_config(credential=["eu-av", "iso-mdl"]))
+    return load_config(path)
+
+
+@pytest.mark.parametrize("kind", ["eu-av", "iso-mdl"])
+async def test_a_service_accepting_both_verifies_either_and_binds_to_its_doctype(
+    session: Session,
+    held: HeldCircuit,
+    both_config: Config,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+) -> None:
+    cert, chain = _anchor_cert()
+    seen: dict[str, object] = {}
+
+    def _record(*args: object, **_kwargs: object) -> None:
+        seen["doc_type"] = args[5]
+        seen["requested"] = args[2]
+
+    monkeypatch.setattr(mdoc, "RequestedAttribute", lambda *fields: fields)
+    monkeypatch.setattr(held.longfellow, "verify", _record)
+    profile = ISO_MDL if kind == "iso-mdl" else EU_AV
+    response = _mdl_response(held, chain) if kind == "iso-mdl" else _device_response(held, chain)
+    verdict = await verify_response(
+        session, held, AnchorSet((cert,)), _body(session, response), both_config
+    )
+    assert isinstance(verdict, VerdictVerified)
+    assert seen["doc_type"] == profile.doc_type
+    assert seen["requested"] == [(profile.namespace, "age_over_18", cbor2.dumps(True))]
+
+
+async def test_a_service_accepting_both_still_refuses_another_doctype(
+    session: Session, held: HeldCircuit, both_config: Config
+) -> None:
+    other = _mdl_response(held, _anchor_cert()[1], docType="org.example.other.1")
+    verdict = await verify_response(
+        session, held, AnchorSet(()), _body(session, other), both_config
+    )
+    assert verdict == VerdictFailed(state="failed", reason="claim-mismatch")
 
 
 async def test_licence_profile_refuses_the_eu_credential(

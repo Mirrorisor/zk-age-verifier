@@ -252,3 +252,31 @@ def test_build_offer_asks_for_the_credential_the_transport_was_given(held: HeldC
     items = cbor2.loads(device_request["docRequests"][0]["itemsRequest"].value)
     assert items["docType"] == ISO_MDL.doc_type
     assert list(items["nameSpaces"]) == [ISO_MDL.namespace]
+
+
+def test_several_device_requests_become_alternatives_sharing_one_encryption_info() -> None:
+    dc_request = build_dc_request([b"\x01", b"\x02"], b"\x03\x04")
+    digital = dc_request["digital"]
+    assert isinstance(digital, dict)
+    requests = digital["requests"]
+    assert [b64url_decode(r["data"]["deviceRequest"]) for r in requests] == [b"\x01", b"\x02"]
+    assert {r["data"]["encryptionInfo"] for r in requests} == {b64url_encode(b"\x03\x04")}
+    assert {r["protocol"] for r in requests} == {"org-iso-mdoc"}
+
+
+def test_build_offer_asks_for_every_profile_in_order(held: HeldCircuit) -> None:
+    state, offer = DcTransport(held, (EU_AV, ISO_MDL)).build_offer(["age_over_18"])
+    digital = offer["digital"]
+    assert isinstance(digital, dict)
+    doc_types = []
+    for request in digital["requests"]:
+        assert request["data"]["encryptionInfo"] == state.encryption_info_b64
+        device_request = cbor2.loads(b64url_decode(request["data"]["deviceRequest"]))
+        items = cbor2.loads(device_request["docRequests"][0]["itemsRequest"].value)
+        doc_types.append(items["docType"])
+    assert doc_types == [EU_AV.doc_type, ISO_MDL.doc_type]
+
+
+def test_a_transport_needs_a_profile(held: HeldCircuit) -> None:
+    with pytest.raises(ValueError, match="at least one credential profile"):
+        DcTransport(held, ())

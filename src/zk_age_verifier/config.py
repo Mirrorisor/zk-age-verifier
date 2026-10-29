@@ -81,7 +81,7 @@ class ServiceConfig(BaseModel):
     session_cap: int = 1000
     timestamp_skew_seconds: int = 300
     cors_allowed_origins: list[str] = Field(default_factory=list)
-    credential: str = EU_AV.name
+    credential: str | list[str] = EU_AV.name
 
     @field_validator("expected_origin")
     @classmethod
@@ -91,16 +91,23 @@ class ServiceConfig(BaseModel):
 
     @field_validator("credential")
     @classmethod
-    def _validate_credential(cls, value: str) -> str:
-        """Accept only the name of a known credential profile."""
-        if value not in PROFILES:
-            raise ValueError(f"credential must be one of {sorted(PROFILES)}, not {value!r}")
+    def _validate_credential(cls, value: str | list[str]) -> str | list[str]:
+        """Accept one known credential profile name, or a list of distinct ones."""
+        names = [value] if isinstance(value, str) else value
+        if not names:
+            raise ValueError("credential must name at least one credential profile")
+        unknown = [name for name in names if name not in PROFILES]
+        if unknown:
+            raise ValueError(f"credential must be one of {sorted(PROFILES)}, not {unknown[0]!r}")
+        if len(set(names)) != len(names):
+            raise ValueError("credential lists the same profile twice")
         return value
 
     @property
-    def profile(self) -> CredentialProfile:
-        """The credential profile this service accepts."""
-        return PROFILES[self.credential]
+    def profiles(self) -> tuple[CredentialProfile, ...]:
+        """The credential profiles this service accepts, in the order the wallet is offered them."""
+        names = [self.credential] if isinstance(self.credential, str) else self.credential
+        return tuple(PROFILES[name] for name in names)
 
 
 class TrustSource(BaseModel):

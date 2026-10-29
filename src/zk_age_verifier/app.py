@@ -67,7 +67,7 @@ def create_app(config: Config) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         """Load the circuit and anchors, run the sweeper, and tear it down on shutdown."""
         held = load_held_circuit(backend=config.service.pylongfellow.backend)
-        store = SessionStore(config, DcTransport(held, config.service.profile))
+        store = SessionStore(config, DcTransport(held, config.service.profiles))
         app.state.config = config
         app.state.held = held
         app.state.store = store

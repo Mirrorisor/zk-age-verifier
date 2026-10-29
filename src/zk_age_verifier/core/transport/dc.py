@@ -114,19 +114,28 @@ def build_device_request(
     return cbor2.dumps({"version": "1.1", "docRequests": [doc_request]})
 
 
-def build_dc_request(device_request: bytes, encryption_info: bytes) -> dict[str, object]:
+def build_dc_request(
+    device_requests: bytes | Sequence[bytes], encryption_info: bytes
+) -> dict[str, object]:
     """Assemble the ``navigator.credentials.get`` argument.
 
-    The session store keeps ``data.encryptionInfo`` verbatim; the transcript
-    hashes that exact string, so it is never re-encoded from the key.
+    Each ``DeviceRequest`` becomes one entry of ``digital.requests``: alternatives,
+    of which the wallet answers one (Multipaz offers the first entry the holder can
+    satisfy). Every entry carries the same ``EncryptionInfo``, so the response opens
+    and binds to the transcript whichever entry was answered. The session store keeps
+    ``data.encryptionInfo`` verbatim; the transcript hashes that exact string, so it
+    is never re-encoded from the key.
 
     Args:
-        device_request: CBOR ``DeviceRequest`` bytes.
+        device_requests: One CBOR ``DeviceRequest``, or several alternatives in order.
         encryption_info: CBOR ``EncryptionInfo`` bytes.
 
     Returns:
-        The DC-API request dict with both payloads as unpadded base64url strings.
+        The DC-API request dict with every payload as an unpadded base64url string.
     """
+    if isinstance(device_requests, bytes):
+        device_requests = [device_requests]
+    encryption_info_b64 = b64url_encode(encryption_info)
     return {
         "digital": {
             "requests": [
@@ -134,9 +143,10 @@ def build_dc_request(device_request: bytes, encryption_info: bytes) -> dict[str,
                     "protocol": "org-iso-mdoc",
                     "data": {
                         "deviceRequest": b64url_encode(device_request),
-                        "encryptionInfo": b64url_encode(encryption_info),
+                        "encryptionInfo": encryption_info_b64,
                     },
                 }
+                for device_request in device_requests
             ]
         },
         "mediation": "required",
@@ -284,15 +294,23 @@ class DcSessionState:
 class DcTransport:
     """Builds the DC offer for a session and the transport state it keeps."""
 
-    def __init__(self, held: HeldCircuit, profile: CredentialProfile) -> None:
-        """Bind the transport to the circuit and credential every offer asks for.
+    def __init__(
+        self, held: HeldCircuit, profiles: CredentialProfile | Sequence[CredentialProfile]
+    ) -> None:
+        """Bind the transport to the circuit and the credentials every offer asks for.
 
         Args:
             held: The resolved circuit whose identity every request advertises.
-            profile: The credential profile every request asks for.
+            profiles: The credential profile, or the alternatives in the order the
+                wallet is offered them.
+
+        Raises:
+            ValueError: No profile was given.
         """
         self._held = held
-        self._profile = profile
+        self._profiles = (profiles,) if isinstance(profiles, CredentialProfile) else tuple(profiles)
+        if not self._profiles:
+            raise ValueError("a transport needs at least one credential profile")
 
     def build_offer(self, claims: Sequence[str]) -> tuple[DcSessionState, dict[str, object]]:
         """Build the ``navigator.credentials.get`` offer and its session state.
@@ -306,10 +324,11 @@ class DcTransport:
         private_key = ec.generate_private_key(ec.SECP256R1())
         nonce = secrets.token_bytes(_NONCE_BYTES)
         encryption_info = build_encryption_info(nonce, private_key.public_key())
-        device_request = build_device_request(
-            self._held.spec, self._held.zk_system_id, claims, self._profile
-        )
-        offer = build_dc_request(device_request, encryption_info)
+        device_requests = [
+            build_device_request(self._held.spec, self._held.zk_system_id, claims, profile)
+            for profile in self._profiles
+        ]
+        offer = build_dc_request(device_requests, encryption_info)
         state = DcSessionState(
             private_key=private_key,
             encryption_info_b64=b64url_encode(encryption_info),

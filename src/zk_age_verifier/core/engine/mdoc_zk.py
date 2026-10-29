@@ -101,7 +101,7 @@ async def verify_presentation(
     claims: tuple[str, ...],
     timestamp_skew_seconds: int,
     *,
-    profile: CredentialProfile,
+    profiles: tuple[CredentialProfile, ...],
 ) -> EngineResult:
     """Verify a decrypted presentation and return the established claims.
 
@@ -115,8 +115,9 @@ async def verify_presentation(
         anchors: The resolved trust anchors.
         claims: The session's requested checks.
         timestamp_skew_seconds: The allowed skew on the proof timestamp.
-        profile: The credential profile the service accepts; its doctype and claim
-            namespace are what the response must carry and what the proof is bound to.
+        profiles: The credential profiles the service accepts. The response's doctype
+            picks one; its claim namespace is where the claims must be disclosed, and
+            the proof is bound to its doctype.
 
     Returns:
         The established claims.
@@ -137,9 +138,8 @@ async def verify_presentation(
             f"wallet used {document.zk_system_id}, holder has {held.zk_system_id}"
         )
 
-    if document.doc_type != profile.doc_type or not _claims_disclosed(
-        document.issuer_signed, profile.namespace, claims
-    ):
+    profile = next((p for p in profiles if p.doc_type == document.doc_type), None)
+    if profile is None or not _claims_disclosed(document.issuer_signed, profile.namespace, claims):
         raise ClaimMismatch("docType or disclosed claims do not match the request")
 
     now = datetime.now(UTC)

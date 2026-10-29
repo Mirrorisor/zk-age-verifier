@@ -44,13 +44,13 @@ def test_load_defaults(config_file: Path) -> None:
 def test_credential_defaults_to_the_eu_age_verification_profile(tmp_path: Path) -> None:
     config = load_config(_write(tmp_path, BASE_CONFIG))
     assert config.service.credential == "eu-av"
-    assert config.service.profile is EU_AV
+    assert config.service.profiles == (EU_AV,)
 
 
 def test_credential_selects_the_iso_driving_licence_profile(tmp_path: Path) -> None:
     body = BASE_CONFIG.replace("[trust]", 'credential = "iso-mdl"\n[trust]')
     config = load_config(_write(tmp_path, body))
-    assert config.service.profile is ISO_MDL
+    assert config.service.profiles == (ISO_MDL,)
 
 
 def test_credential_can_come_from_the_environment(
@@ -58,7 +58,26 @@ def test_credential_can_come_from_the_environment(
 ) -> None:
     monkeypatch.setenv(f"{PREFIX}SERVICE__CREDENTIAL", "iso-mdl")
     config = load_config(_write(tmp_path, BASE_CONFIG))
-    assert config.service.profile is ISO_MDL
+    assert config.service.profiles == (ISO_MDL,)
+
+
+def test_credential_can_list_several_profiles_in_order(tmp_path: Path) -> None:
+    body = BASE_CONFIG.replace("[trust]", 'credential = ["iso-mdl", "eu-av"]\n[trust]')
+    config = load_config(_write(tmp_path, body))
+    assert config.service.profiles == (ISO_MDL, EU_AV)
+
+
+@pytest.mark.parametrize(
+    ("credential", "message"),
+    [
+        ([], "at least one"),
+        (["eu-av", "eu-av"], "same profile twice"),
+        (["eu-av", "passport"], "not 'passport'"),
+    ],
+)
+def test_bad_credential_lists_are_rejected(credential: list[str], message: str) -> None:
+    with pytest.raises(ValidationError, match=message):
+        ServiceConfig(expected_origin="https://chat.example.org", credential=credential)
 
 
 def test_unknown_credential_is_rejected_and_the_choices_are_named() -> None:
