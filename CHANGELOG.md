@@ -1,12 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 - 2026-11-15
 
 - Bumped pylongfellow from 0.5.2 to 0.8.0 (#84).
-- `HeldCircuit.spec` and `build_device_request` now take `zk_age_verifier.core.engine.circuits.CircuitSpec`. Previously they took `pylongfellow.mdoc.CircuitSpec`, which pylongfellow 0.6.0 removed (#84).
 - `pylongfellow.backend` now accepts `lf-rust`, the backend pylongfellow 0.8.0 added (#84).
-- An `untrusted-issuer` failure now logs an `untrusted_issuer` debug event naming the presented certificate (subject, issuer, validity, SHA-256 fingerprint) and why it was refused. The same fields were logged at warning. The verdict returned to the client is unchanged ([#76](https://github.com/pipe23-org/zk-age-verifier/issues/76), #86).
-- Configuration file table and key names are matched case-sensitively; environment variable names are not. Previously the TOML source relied on pydantic-settings' default, which pydantic-settings 2.15 changed to case-insensitive for top-level tables.
+- An `untrusted-issuer` failure now logs an `untrusted_issuer` debug event naming the presented certificate (subject, issuer, validity, SHA-256 fingerprint) and why it was refused. Previously nothing identified the refused certificate. The verdict returned to the client is unchanged (#77, #86).
+- Configuration file table and key names are matched case-sensitively; environment variable names are not. Previously the TOML source relied on pydantic-settings' default, which pydantic-settings 2.15 changed to case-insensitive for top-level tables (#59).
 - `[service]` gains `log_level` (default `info`; env `ZK_AGE_VERIFIER_SERVICE__LOG_LEVEL`), the threshold below which log events are dropped, one of `debug`, `info`, `warning`, `error`. The threshold was fixed at `info`. Any other value fails startup (#86).
 
 ## 0.4.0 - 2026-08-08

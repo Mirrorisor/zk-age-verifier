@@ -60,7 +60,7 @@ POST /sessions/{session_id}/presentation
 {"state": "failed", "reason": "decrypt-failed"}
 ```
 
-`GET /health` returns `{"status": "ok", "zk_age_verifier": "0.4.0", "pylongfellow": "0.5.2",
+`GET /health` returns `{"status": "ok", "zk_age_verifier": "0.5.0", "pylongfellow": "0.8.0",
 "engine": "google-cpp", "ref": null}` while the process is up.
 
 `GET /debug/transcript/{session_id}` returns the transcript inputs stored for a session — the
@@ -148,6 +148,9 @@ You should not rely on this code.
 - The session store is in-process.
 - The proof is verified against an empty device-namespace map; the ZK response format carries
   no field holding the map the wallet signed.
+- An `etsi_xml` trust source takes every certificate in the list file as an anchor, including
+  the list's own signer.
+- Log output at info level can contain text supplied by the presenter.
 
 ## License
 

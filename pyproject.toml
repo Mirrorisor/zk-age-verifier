@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "zk-age-verifier"
-version = "0.4.0"
+version = "0.5.0"
 description = "Verifier service for EU age-verification proofs (Longfellow ZK over mdoc, W3C Digital Credentials API)"
 readme = "README.md"
 requires-python = ">=3.11"
