@@ -2,9 +2,8 @@ from pathlib import Path
 
 import pytest
 from pylongfellow import Pylongfellow
-from pylongfellow.mdoc import CircuitSpec
 
-from zk_age_verifier.core.engine.circuits import HeldCircuit, load_held_circuit
+from zk_age_verifier.core.engine.circuits import CircuitSpec, HeldCircuit, load_held_circuit
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

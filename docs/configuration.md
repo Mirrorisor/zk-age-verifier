@@ -42,9 +42,10 @@ from the environment only and takes no prefix.
 ## Proof engine
 
 The `pylongfellow.backend` key selects the proof engine the service verifies with.
-Registry names: `google-cpp` (google/longfellow-zk), `isrg-rust`
-(abetterinternet/zk-cred-longfellow). Both ship in the default pylongfellow install. An
-unknown or unbuilt name fails startup.
+Registry names: `google-cpp` (the C++ implementation in longfellow-zk/longfellow-zk),
+`isrg-rust` (abetterinternet/zk-cred-longfellow), `lf-rust` (the Rust implementation in
+longfellow-zk/longfellow-zk). All three ship in the default pylongfellow install. An unknown
+or unbuilt name fails startup.
 
 Open issues on [pylongfellow](https://github.com/pipe23-org/pylongfellow) detail any known problems
 with these backends.

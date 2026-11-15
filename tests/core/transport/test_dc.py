@@ -3,10 +3,9 @@ import hashlib
 import cbor2
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
-from pylongfellow.mdoc import CircuitSpec
 
 from zk_age_verifier.core.encoding import b64url_decode, b64url_encode
-from zk_age_verifier.core.engine.circuits import HeldCircuit, zk_system_id
+from zk_age_verifier.core.engine.circuits import CircuitSpec, HeldCircuit, zk_system_id
 from zk_age_verifier.core.transport.dc import (
     COSE_CRV,
     COSE_CRV_P256,

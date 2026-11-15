@@ -15,7 +15,8 @@ from pathlib import Path
 import cbor2
 import pytest
 from pylongfellow import Pylongfellow, mdoc
-from pylongfellow.mdoc import CircuitSpec
+
+from zk_age_verifier.core.engine.circuits import CircuitSpec
 
 # Calls pylongfellow directly, never the socket: skipped under --transport=live.
 pytestmark = pytest.mark.inprocess_only
@@ -78,7 +79,7 @@ def specimen() -> Specimen:
 
 def test_google_cpp_verifies(specimen: Specimen) -> None:
     verifier = Pylongfellow(backend="google-cpp")
-    verifier.load_circuit(specimen.spec, specimen.circuit)
+    verifier.load_circuit(specimen.circuit, specimen.spec.version, specimen.spec.num_attributes)
     verifier.verify(
         specimen.issuer_public_key,
         specimen.transcript,
@@ -91,7 +92,7 @@ def test_google_cpp_verifies(specimen: Specimen) -> None:
 
 def test_isrg_rust_verifies_given_empty_device_namespaces(specimen: Specimen) -> None:
     verifier = Pylongfellow(backend="isrg-rust")
-    verifier.load_circuit(specimen.spec, specimen.circuit)
+    verifier.load_circuit(specimen.circuit, specimen.spec.version, specimen.spec.num_attributes)
     verifier.verify(
         specimen.issuer_public_key,
         specimen.transcript,

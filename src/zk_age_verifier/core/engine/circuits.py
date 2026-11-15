@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from importlib.resources import files
 
 from pylongfellow import Pylongfellow
-from pylongfellow.mdoc import CircuitSpec
 
 # The pinned circuit: the AV profile's proof system, circuit version, and
 # attribute count.
@@ -15,6 +14,27 @@ CIRCUIT_VERSION = 7
 NUM_ATTRIBUTES = 1
 
 _ARTIFACT = "v7-1attr"
+
+
+@dataclass(frozen=True)
+class CircuitSpec:
+    """The six values that identify a circuit to a wallet.
+
+    Attributes:
+        system: The proof system's name and version.
+        circuit_hash: The circuit's identifying hash, in hex.
+        num_attributes: The number of attributes the circuit proves over.
+        version: The circuit version.
+        block_enc_hash: The proof system's ``block_enc_hash`` parameter.
+        block_enc_sig: The proof system's ``block_enc_sig`` parameter.
+    """
+
+    system: str
+    circuit_hash: str
+    num_attributes: int
+    version: int
+    block_enc_hash: int
+    block_enc_sig: int
 
 
 def zk_system_id(spec: CircuitSpec) -> str:
@@ -57,7 +77,7 @@ def load_held_circuit(*, backend: str) -> HeldCircuit:
     The circuit blob and its sidecar ship as package data. The blob is checked
     against the sidecar's ``byte_sha256`` and the spec it describes is checked
     against the pinned system, version, and attribute count. The bound backend
-    re-validates that the spec's ``circuit_hash`` matches the blob at load.
+    loads the blob as a circuit of that version and attribute count.
 
     Args:
         backend: pylongfellow backend registry name. Constructing the instance
@@ -104,5 +124,5 @@ def load_held_circuit(*, backend: str) -> HeldCircuit:
             f"{NUM_ATTRIBUTES}attr"
         )
 
-    longfellow.load_circuit(spec, blob)
+    longfellow.load_circuit(blob, spec.version, spec.num_attributes)
     return HeldCircuit(spec=spec, longfellow=longfellow, zk_system_id=zk_system_id(spec))

@@ -1,8 +1,7 @@
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
-from pylongfellow.mdoc import CircuitSpec
 
-from zk_age_verifier.core.engine.circuits import HeldCircuit
+from zk_age_verifier.core.engine.circuits import CircuitSpec, HeldCircuit
 
 SECRET = int.from_bytes(bytes(range(1, 33)), "big")
 
