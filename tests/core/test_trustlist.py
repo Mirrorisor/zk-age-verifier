@@ -1,5 +1,5 @@
 import base64
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 
 import pytest
@@ -22,6 +22,7 @@ VENDORED_ISSUER_X = 0xB4682EC20E06E8DF840B5DD32959798AB20C544D4DA50109FF4684D06F
 AV_ISSUER_CA_PEM = Path(__file__).parents[1] / "data" / "av-issuer-ca-01.pem"
 AV_DOCUMENT_SIGNER_PEM = Path(__file__).parents[1] / "data" / "av-document-signer-001.pem"
 AV_DOCUMENT_SIGNER_X = 0x6789E96E797E2E04F7F3CBB54A12410412410DB000FB6D63DC977D8B5D35A4F9
+AV_DOCUMENT_SIGNER_NOT_AFTER = datetime(2026, 9, 24, 10, 57, 10, tzinfo=UTC)
 
 NOW = datetime.now(UTC)
 
@@ -162,7 +163,21 @@ def test_non_p256_key_rejected() -> None:
         AnchorSet((cert,)).resolve(cert)
 
 
-def test_real_document_signer_resolves_through_real_anchor() -> None:
+class _ClockAt:
+    """Stand-in for ``trustlist.datetime`` whose ``now`` returns a fixed instant."""
+
+    def __init__(self, instant: datetime) -> None:
+        self._instant = instant
+
+    def now(self, tz: tzinfo) -> datetime:
+        return self._instant.astimezone(tz)
+
+
+def test_real_document_signer_resolves_through_real_anchor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The clock is set to the day the certificate was captured, inside its validity.
+    monkeypatch.setattr(trustlist, "datetime", _ClockAt(datetime(2026, 8, 4, tzinfo=UTC)))
     anchor = x509.load_pem_x509_certificate(AV_ISSUER_CA_PEM.read_bytes())
     signer = x509.load_pem_x509_certificate(AV_DOCUMENT_SIGNER_PEM.read_bytes())
     with capture_logs() as logs:
@@ -171,6 +186,15 @@ def test_real_document_signer_resolves_through_real_anchor() -> None:
     fallbacks = [entry for entry in logs if entry["event"] == "key_usage_der_fallback"]
     assert fallbacks
     assert fallbacks[0]["error"]
+
+
+def test_real_document_signer_rejected_after_expiry(monkeypatch: pytest.MonkeyPatch) -> None:
+    one_second_late = AV_DOCUMENT_SIGNER_NOT_AFTER + timedelta(seconds=1)
+    monkeypatch.setattr(trustlist, "datetime", _ClockAt(one_second_late))
+    anchor = x509.load_pem_x509_certificate(AV_ISSUER_CA_PEM.read_bytes())
+    signer = x509.load_pem_x509_certificate(AV_DOCUMENT_SIGNER_PEM.read_bytes())
+    with pytest.raises(UntrustedIssuer):
+        AnchorSet((anchor,)).resolve(signer)
 
 
 def test_unreadable_key_usage_rejected() -> None:
