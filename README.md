@@ -87,6 +87,9 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
   the proof timestamp and the verifier clock.
 - `cors_allowed_origins` (default empty) — origins granted cross-origin access to the API.
   An empty list sends no CORS headers.
+- `log_level` (default `info`) — the threshold below which log events are dropped, one of
+  `debug`, `info`, `warning`, `error`. Debug output includes the subject, issuer, validity
+  dates, and SHA-256 fingerprint of the certificate a refused presentation supplied.
 
 ### [trust]
 

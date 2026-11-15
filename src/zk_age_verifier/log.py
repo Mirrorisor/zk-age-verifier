@@ -2,15 +2,29 @@
 
 import logging
 import os
+from typing import Literal
 
 import structlog
 
+LogLevel = Literal["debug", "info", "warning", "error"]
+"""The thresholds the ``log_level`` configuration key accepts."""
 
-def configure_logging() -> None:
+_LEVELS: dict[LogLevel, int] = {
+    "debug": logging.DEBUG,
+    "info": logging.INFO,
+    "warning": logging.WARNING,
+    "error": logging.ERROR,
+}
+
+
+def configure_logging(level: LogLevel) -> None:
     """Configure structlog: JSON lines by default, pretty console when LOG_FORMAT=console.
 
     Stdlib logging is routed through the same renderer, so server and library
     logs come out in the one stream.
+
+    Args:
+        level: The threshold below which events are dropped.
     """
     processors: list[structlog.typing.Processor] = [
         structlog.contextvars.merge_contextvars,
@@ -26,7 +40,7 @@ def configure_logging() -> None:
     structlog.configure(
         processors=[*processors, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
         logger_factory=structlog.stdlib.LoggerFactory(),
-        cache_logger_on_first_use=True,
+        cache_logger_on_first_use=False,
     )
     handler = logging.StreamHandler()
     handler.setFormatter(
@@ -36,4 +50,4 @@ def configure_logging() -> None:
         )
     )
     # force=True evicts handlers a server may already have installed on the root logger.
-    logging.basicConfig(handlers=[handler], level=logging.INFO, force=True)
+    logging.basicConfig(handlers=[handler], level=_LEVELS[level], force=True)

@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from tests.conftest import render_config
 from zk_age_verifier import __main__
 from zk_age_verifier.__main__ import _serve, main
 from zk_age_verifier.app import CONFIG_ENV_VAR
@@ -35,6 +36,18 @@ def test_main_rejects_bad_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(__main__, "_serve", lambda host, port: None)
     with pytest.raises(SystemExit):
         main(["--config", str(tmp_path / "missing.toml")])
+    assert CONFIG_ENV_VAR not in os.environ
+
+
+def test_main_rejects_bad_log_level(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(__main__, "_serve", lambda host, port: None)
+    path = tmp_path / "config.toml"
+    path.write_text(render_config(log_level="verbose"))
+    with pytest.raises(SystemExit):
+        main(["--config", str(path)])
+    assert "log_level" in capsys.readouterr().err
     assert CONFIG_ENV_VAR not in os.environ
 
 

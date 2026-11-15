@@ -152,12 +152,12 @@ def test_unrelated_cert_rejected() -> None:
         AnchorSet((_self_signed(),)).resolve(_self_signed("stranger"))
 
 
-def test_untrusted_issuer_logs_presented_certificate() -> None:
+def test_untrusted_issuer_logs_presented_certificate_at_debug() -> None:
     stranger = _self_signed("stranger")
     with capture_logs() as logs, pytest.raises(UntrustedIssuer):
         AnchorSet((_self_signed(),)).resolve(stranger)
     (event,) = [entry for entry in logs if entry["event"] == "untrusted_issuer"]
-    assert event["log_level"] == "warning"
+    assert event["log_level"] == "debug"
     assert event["subject"] == "CN=stranger"
     assert event["sha256"] == stranger.fingerprint(hashes.SHA256()).hex()
 

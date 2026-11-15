@@ -103,11 +103,11 @@ def _log_untrusted(cert: x509.Certificate, reason: str) -> None:
     """Log which certificate was refused, so an operator can tell why.
 
     The verdict a client sees stays the bare ``untrusted-issuer``; this detail
-    goes to the server log only. It names the presented certificate and its
+    goes to the debug log only. It names the presented certificate and its
     SHA-256 fingerprint, which is what an operator compares against the anchors
     they configured (https://github.com/pipe23-org/zk-age-verifier/issues/76).
     """
-    log.warning(
+    log.debug(
         "untrusted_issuer",
         reason=reason,
         subject=cert.subject.rfc4514_string(),
