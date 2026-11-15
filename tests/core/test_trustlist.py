@@ -1,6 +1,6 @@
 import base64
 import hashlib
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 
 import pytest
@@ -23,6 +23,7 @@ VENDORED_ISSUER_X = 0xB4682EC20E06E8DF840B5DD32959798AB20C544D4DA50109FF4684D06F
 AV_ISSUER_CA_PEM = Path(__file__).parents[1] / "data" / "av-issuer-ca-01.pem"
 AV_DOCUMENT_SIGNER_PEM = Path(__file__).parents[1] / "data" / "av-document-signer-001.pem"
 AV_DOCUMENT_SIGNER_X = 0x6789E96E797E2E04F7F3CBB54A12410412410DB000FB6D63DC977D8B5D35A4F9
+AV_DOCUMENT_SIGNER_NOT_AFTER = datetime(2026, 9, 24, 10, 57, 10, tzinfo=UTC)
 
 NOW = datetime.now(UTC)
 
@@ -143,6 +144,16 @@ def test_unrelated_cert_rejected() -> None:
         AnchorSet((_self_signed(),)).resolve(_self_signed("stranger"))
 
 
+def test_untrusted_issuer_logs_presented_certificate() -> None:
+    stranger = _self_signed("stranger")
+    with capture_logs() as logs, pytest.raises(UntrustedIssuer):
+        AnchorSet((_self_signed(),)).resolve(stranger)
+    (event,) = [entry for entry in logs if entry["event"] == "untrusted_issuer"]
+    assert event["log_level"] == "warning"
+    assert event["subject"] == "CN=stranger"
+    assert event["sha256"] == stranger.fingerprint(hashes.SHA256()).hex()
+
+
 def test_expired_anchor_rejected() -> None:
     expired = _self_signed(not_after=NOW - timedelta(days=1))
     with pytest.raises(UntrustedIssuer):
@@ -163,21 +174,21 @@ def test_non_p256_key_rejected() -> None:
         AnchorSet((cert,)).resolve(cert)
 
 
-class _FrozenDatetime(datetime):
-    """``datetime`` whose ``now()`` is a day inside the real document signer's validity."""
+class _ClockAt:
+    """Stand-in for ``trustlist.datetime`` whose ``now`` returns a fixed instant."""
 
-    @classmethod
-    def now(cls, tz=None):  # type: ignore[no-untyped-def]
-        return datetime(2026, 7, 1, tzinfo=UTC)
+    def __init__(self, instant: datetime) -> None:
+        self._instant = instant
+
+    def now(self, tz: tzinfo) -> datetime:
+        return self._instant.astimezone(tz)
 
 
 def test_real_document_signer_resolves_through_real_anchor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The real document signer is valid only until 2026-09-24, so the clock is
-    # pinned to a day inside its validity. Without this the test starts failing
-    # the day the certificate expires.
-    monkeypatch.setattr(trustlist, "datetime", _FrozenDatetime)
+    # The clock is set to the day the certificate was captured, inside its validity.
+    monkeypatch.setattr(trustlist, "datetime", _ClockAt(datetime(2026, 8, 4, tzinfo=UTC)))
     anchor = x509.load_pem_x509_certificate(AV_ISSUER_CA_PEM.read_bytes())
     signer = x509.load_pem_x509_certificate(AV_DOCUMENT_SIGNER_PEM.read_bytes())
     with capture_logs() as logs:
@@ -186,6 +197,15 @@ def test_real_document_signer_resolves_through_real_anchor(
     fallbacks = [entry for entry in logs if entry["event"] == "key_usage_der_fallback"]
     assert fallbacks
     assert fallbacks[0]["error"]
+
+
+def test_real_document_signer_rejected_after_expiry(monkeypatch: pytest.MonkeyPatch) -> None:
+    one_second_late = AV_DOCUMENT_SIGNER_NOT_AFTER + timedelta(seconds=1)
+    monkeypatch.setattr(trustlist, "datetime", _ClockAt(one_second_late))
+    anchor = x509.load_pem_x509_certificate(AV_ISSUER_CA_PEM.read_bytes())
+    signer = x509.load_pem_x509_certificate(AV_DOCUMENT_SIGNER_PEM.read_bytes())
+    with pytest.raises(UntrustedIssuer):
+        AnchorSet((anchor,)).resolve(signer)
 
 
 def test_unreadable_key_usage_rejected() -> None:
