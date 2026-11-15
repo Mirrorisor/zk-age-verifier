@@ -24,6 +24,15 @@ AV_DOCUMENT_SIGNER_PEM = Path(__file__).parents[1] / "data" / "av-document-signe
 AV_DOCUMENT_SIGNER_X = 0x6789E96E797E2E04F7F3CBB54A12410412410DB000FB6D63DC977D8B5D35A4F9
 AV_DOCUMENT_SIGNER_NOT_AFTER = datetime(2026, 9, 24, 10, 57, 10, tzinfo=UTC)
 
+# Real ETSI TS 119 612 trusted lists, not ones this suite builds. See
+# tests/data/README.md. The fingerprints are SHA-256 over the DER certificate.
+AV_TL_PRODUCTION_XML = Path(__file__).parents[1] / "data" / "av-tl-production-2026-11-15.xml"
+AV_TL_ACCEPTANCE_XML = Path(__file__).parents[1] / "data" / "av-tl-acceptance-2026-11-15.xml"
+AV_TL_PRODUCTION_RECOGNIZED = ("1dc89e870cddac990f5585a0265568522531af678592cc73effd9f8706f55995",)
+AV_TL_ACCEPTANCE_RECOGNIZED_COUNT = 12
+AV_TL_ACCEPTANCE_DEPRECATED = "a8234aa8339797c917286fb74797dc538acbbec6fcccb146b984d494a000a349"
+AV_TL_ACCEPTANCE_LIST_SIGNER = "0ccf87a5abf4db89bde4e10202e2523296bea7d835ba6a5a41054b9e1e6b8949"
+
 NOW = datetime.now(UTC)
 
 
@@ -340,3 +349,51 @@ def test_etsi_xml_url_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 def test_etsi_xml_http_url_rejected() -> None:
     with pytest.raises(ConfigError, match="http"):
         load_anchors([TrustSource(etsi_xml="http://tsl.example.org/list.xml")])
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="an etsi_xml source takes every certificate in the file "
+    "(https://github.com/pipe23-org/zk-age-verifier/issues/76)",
+)
+def test_production_recognized_service_loaded() -> None:
+    anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_PRODUCTION_XML))])
+    loaded = {anchor.fingerprint(hashes.SHA256()).hex() for anchor in anchors.anchors}
+    assert loaded == set(AV_TL_PRODUCTION_RECOGNIZED)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="an etsi_xml source takes every certificate in the file "
+    "(https://github.com/pipe23-org/zk-age-verifier/issues/76)",
+)
+def test_acceptance_recognized_services_loaded() -> None:
+    anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_ACCEPTANCE_XML))])
+    assert len(anchors.anchors) == AV_TL_ACCEPTANCE_RECOGNIZED_COUNT
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="an etsi_xml source takes every certificate in the file "
+    "(https://github.com/pipe23-org/zk-age-verifier/issues/76)",
+)
+def test_acceptance_deprecated_service_absent() -> None:
+    anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_ACCEPTANCE_XML))])
+    loaded = {anchor.fingerprint(hashes.SHA256()).hex() for anchor in anchors.anchors}
+    assert AV_TL_ACCEPTANCE_DEPRECATED not in loaded
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="an etsi_xml source takes every certificate in the file "
+    "(https://github.com/pipe23-org/zk-age-verifier/issues/76)",
+)
+def test_acceptance_list_signer_absent() -> None:
+    anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_ACCEPTANCE_XML))])
+    loaded = {anchor.fingerprint(hashes.SHA256()).hex() for anchor in anchors.anchors}
+    assert AV_TL_ACCEPTANCE_LIST_SIGNER not in loaded
+
+
+# No test states that service-history certificates are left out: the acceptance
+# list holds three service-history instances and one history certificate, and
+# that certificate is the one a current service is also listed under.
