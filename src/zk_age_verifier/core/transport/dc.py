@@ -15,11 +15,10 @@ from dataclasses import dataclass
 import cbor2
 from cryptography.hazmat.primitives.asymmetric import ec
 from pyhpke import AEADId, CipherSuite, KDFId, KEMId, KEMKey
-from pylongfellow.mdoc import CircuitSpec
 
 from zk_age_verifier.core.constants import EU_AV, CredentialProfile
 from zk_age_verifier.core.encoding import b64url_decode, b64url_encode
-from zk_age_verifier.core.engine.circuits import HeldCircuit
+from zk_age_verifier.core.engine.circuits import CircuitSpec, HeldCircuit
 
 # COSE_Key labels and values (RFC 9052 §7): kty EC2, crv P-256, x/y coordinates.
 COSE_KTY, COSE_CRV, COSE_X, COSE_Y = 1, -1, -2, -3

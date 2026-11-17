@@ -30,6 +30,7 @@ from pydantic_settings import (
 )
 
 from zk_age_verifier.core.constants import EU_AV, PROFILES, CredentialProfile
+from zk_age_verifier.log import LogLevel
 
 
 class ConfigError(Exception):
@@ -71,7 +72,7 @@ class PylongfellowConfig(BaseModel):
 
 
 class ServiceConfig(BaseModel):
-    """The ``[service]`` table: origin binding, proof-engine selection, and session hygiene."""
+    """The ``[service]`` table: origin binding, proof engine, session hygiene, and log level."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -82,6 +83,7 @@ class ServiceConfig(BaseModel):
     timestamp_skew_seconds: int = 300
     cors_allowed_origins: list[str] = Field(default_factory=list)
     credential: str | list[str] = EU_AV.name
+    log_level: LogLevel = "info"
 
     @field_validator("expected_origin")
     @classmethod

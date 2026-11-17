@@ -37,6 +37,7 @@ def test_load_defaults(config_file: Path) -> None:
     assert config.service.session_cap == 1000
     assert config.service.timestamp_skew_seconds == 300
     assert config.service.cors_allowed_origins == []
+    assert config.service.log_level == "info"
     pem = config.trust.sources[0].pem
     assert pem is not None and pem.endswith("test-anchor.pem")
 
@@ -95,6 +96,19 @@ def test_timestamp_skew_override(tmp_path: Path) -> None:
     )
     config = load_config(_write(tmp_path, body))
     assert config.service.timestamp_skew_seconds == 30
+
+
+@pytest.mark.parametrize("level", ["debug", "info", "warning", "error"])
+def test_log_level_accepted(tmp_path: Path, level: str) -> None:
+    body = BASE_CONFIG.replace("[trust]", f'log_level = "{level}"\n[trust]')
+    assert load_config(_write(tmp_path, body)).service.log_level == level
+
+
+@pytest.mark.parametrize("level", ["verbose", "DEBUG", "warn"])
+def test_bad_log_level_rejected(tmp_path: Path, level: str) -> None:
+    body = BASE_CONFIG.replace("[trust]", f'log_level = "{level}"\n[trust]')
+    with pytest.raises(ConfigError, match="invalid configuration"):
+        load_config(_write(tmp_path, body))
 
 
 def test_load_overrides(tmp_path: Path) -> None:

@@ -1,6 +1,6 @@
 import base64
 import hashlib
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 
 import pytest
@@ -29,6 +29,16 @@ VENDORED_ISSUER_X = 0xB4682EC20E06E8DF840B5DD32959798AB20C544D4DA50109FF4684D06F
 AV_ISSUER_CA_PEM = Path(__file__).parents[1] / "data" / "av-issuer-ca-01.pem"
 AV_DOCUMENT_SIGNER_PEM = Path(__file__).parents[1] / "data" / "av-document-signer-001.pem"
 AV_DOCUMENT_SIGNER_X = 0x6789E96E797E2E04F7F3CBB54A12410412410DB000FB6D63DC977D8B5D35A4F9
+AV_DOCUMENT_SIGNER_NOT_AFTER = datetime(2026, 9, 24, 10, 57, 10, tzinfo=UTC)
+
+# Real ETSI TS 119 612 trusted lists, not ones this suite builds. See
+# tests/data/README.md. The fingerprints are SHA-256 over the DER certificate.
+AV_TL_PRODUCTION_XML = Path(__file__).parents[1] / "data" / "av-tl-production-2026-11-15.xml"
+AV_TL_ACCEPTANCE_XML = Path(__file__).parents[1] / "data" / "av-tl-acceptance-2026-11-15.xml"
+AV_TL_PRODUCTION_RECOGNIZED = ("1dc89e870cddac990f5585a0265568522531af678592cc73effd9f8706f55995",)
+AV_TL_ACCEPTANCE_RECOGNIZED_COUNT = 12
+AV_TL_ACCEPTANCE_DEPRECATED = "a8234aa8339797c917286fb74797dc538acbbec6fcccb146b984d494a000a349"
+AV_TL_ACCEPTANCE_LIST_SIGNER = "0ccf87a5abf4db89bde4e10202e2523296bea7d835ba6a5a41054b9e1e6b8949"
 
 NOW = datetime.now(UTC)
 
@@ -149,12 +159,12 @@ def test_unrelated_cert_rejected() -> None:
         AnchorSet((_self_signed(),)).resolve(_self_signed("stranger"))
 
 
-def test_untrusted_issuer_logs_presented_certificate() -> None:
+def test_untrusted_issuer_logs_presented_certificate_at_debug() -> None:
     stranger = _self_signed("stranger")
     with capture_logs() as logs, pytest.raises(UntrustedIssuer):
         AnchorSet((_self_signed(),)).resolve(stranger)
     (event,) = [entry for entry in logs if entry["event"] == "untrusted_issuer"]
-    assert event["log_level"] == "warning"
+    assert event["log_level"] == "debug"
     assert event["subject"] == "CN=stranger"
     assert event["sha256"] == stranger.fingerprint(hashes.SHA256()).hex()
     # the logged certificate can be turned back into the certificate that was refused
@@ -316,21 +326,21 @@ def test_non_p256_key_rejected() -> None:
         AnchorSet((cert,)).resolve(cert)
 
 
-class _FrozenDatetime(datetime):
-    """``datetime`` whose ``now()`` is a day inside the real document signer's validity."""
+class _ClockAt:
+    """Stand-in for ``trustlist.datetime`` whose ``now`` returns a fixed instant."""
 
-    @classmethod
-    def now(cls, tz=None):  # type: ignore[no-untyped-def]
-        return datetime(2026, 7, 1, tzinfo=UTC)
+    def __init__(self, instant: datetime) -> None:
+        self._instant = instant
+
+    def now(self, tz: tzinfo) -> datetime:
+        return self._instant.astimezone(tz)
 
 
 def test_real_document_signer_resolves_through_real_anchor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The real document signer is valid only until 2026-09-24, so the clock is
-    # pinned to a day inside its validity. Without this the test starts failing
-    # the day the certificate expires.
-    monkeypatch.setattr(trustlist, "datetime", _FrozenDatetime)
+    # The clock is set to the day the certificate was captured, inside its validity.
+    monkeypatch.setattr(trustlist, "datetime", _ClockAt(datetime(2026, 8, 4, tzinfo=UTC)))
     anchor = x509.load_pem_x509_certificate(AV_ISSUER_CA_PEM.read_bytes())
     signer = x509.load_pem_x509_certificate(AV_DOCUMENT_SIGNER_PEM.read_bytes())
     with capture_logs() as logs:
@@ -339,6 +349,15 @@ def test_real_document_signer_resolves_through_real_anchor(
     fallbacks = [entry for entry in logs if entry["event"] == "key_usage_der_fallback"]
     assert fallbacks
     assert fallbacks[0]["error"]
+
+
+def test_real_document_signer_rejected_after_expiry(monkeypatch: pytest.MonkeyPatch) -> None:
+    one_second_late = AV_DOCUMENT_SIGNER_NOT_AFTER + timedelta(seconds=1)
+    monkeypatch.setattr(trustlist, "datetime", _ClockAt(one_second_late))
+    anchor = x509.load_pem_x509_certificate(AV_ISSUER_CA_PEM.read_bytes())
+    signer = x509.load_pem_x509_certificate(AV_DOCUMENT_SIGNER_PEM.read_bytes())
+    with pytest.raises(UntrustedIssuer):
+        AnchorSet((anchor,)).resolve(signer)
 
 
 def test_unreadable_key_usage_rejected() -> None:
@@ -643,3 +662,43 @@ def test_a_list_without_a_usable_next_update_loads_with_a_warning(
     with capture_logs() as logs:
         load_anchors([_list_file(tmp_path, next_update)])
     assert [entry for entry in logs if entry["event"] == "etsi_xml_no_next_update"]
+
+
+def _at_capture_day(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin the clock to the day the real lists were captured, before their NextUpdate."""
+    monkeypatch.setattr(trustlist, "datetime", _ClockAt(datetime(2026, 11, 15, tzinfo=UTC)))
+
+
+# The real EU Age Verification Trusted Lists (#76): only certificates of services whose
+# status is "recognized" are loaded; not the deprecated service, the pointers to other
+# lists, nor the list's own signer.
+def test_production_recognized_service_loaded(monkeypatch: pytest.MonkeyPatch) -> None:
+    _at_capture_day(monkeypatch)
+    anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_PRODUCTION_XML))])
+    loaded = {anchor.fingerprint(hashes.SHA256()).hex() for anchor in anchors.anchors}
+    assert loaded == set(AV_TL_PRODUCTION_RECOGNIZED)
+
+
+def test_acceptance_recognized_services_loaded(monkeypatch: pytest.MonkeyPatch) -> None:
+    _at_capture_day(monkeypatch)
+    anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_ACCEPTANCE_XML))])
+    assert len(anchors.anchors) == AV_TL_ACCEPTANCE_RECOGNIZED_COUNT
+
+
+def test_acceptance_deprecated_service_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    _at_capture_day(monkeypatch)
+    anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_ACCEPTANCE_XML))])
+    loaded = {anchor.fingerprint(hashes.SHA256()).hex() for anchor in anchors.anchors}
+    assert AV_TL_ACCEPTANCE_DEPRECATED not in loaded
+
+
+def test_acceptance_list_signer_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    _at_capture_day(monkeypatch)
+    anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_ACCEPTANCE_XML))])
+    loaded = {anchor.fingerprint(hashes.SHA256()).hex() for anchor in anchors.anchors}
+    assert AV_TL_ACCEPTANCE_LIST_SIGNER not in loaded
+
+
+# No test states that service-history certificates are left out: the acceptance
+# list holds three service-history instances and one history certificate, and
+# that certificate is the one a current service is also listed under.

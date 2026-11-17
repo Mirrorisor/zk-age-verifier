@@ -71,7 +71,7 @@ POST /sessions/{session_id}/presentation
 {"state": "failed", "reason": "decrypt-failed"}
 ```
 
-`GET /health` returns `{"status": "ok", "zk_age_verifier": "0.4.0", "pylongfellow": "0.5.2",
+`GET /health` returns `{"status": "ok", "zk_age_verifier": "0.5.0", "pylongfellow": "0.8.0",
 "engine": "google-cpp", "ref": null}` while the process is up.
 
 `GET /debug/transcript/{session_id}` returns the transcript inputs stored for a session — the
@@ -110,6 +110,10 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
   exactly `age_over_18`. A licence is only accepted if its issuer's
   certificate chains to a `[trust]` anchor you configured, so an `iso-mdl` service needs the
   licence issuer's root, not the EU one.
+- `log_level` (default `info`) — the threshold below which log events are dropped, one of
+  `debug`, `info`, `warning`, `error`. Debug output includes the subject, issuer, validity
+  dates, and SHA-256 fingerprint of the certificate a refused presentation supplied, and the whole
+  certificate as `der_base64` (fork), for `--check-cert`.
 
 ### [trust]
 
@@ -184,9 +188,10 @@ from the environment only and takes no prefix.
 ### Proof engine
 
 The `pylongfellow.backend` key selects the proof engine the service verifies with.
-Registry names: `google-cpp` (google/longfellow-zk), `isrg-rust`
-(abetterinternet/zk-cred-longfellow). Both ship in the default pylongfellow install. An
-unknown or unbuilt name fails startup.
+Registry names: `google-cpp` (the C++ implementation in longfellow-zk/longfellow-zk),
+`isrg-rust` (abetterinternet/zk-cred-longfellow), `lf-rust` (the Rust implementation in
+longfellow-zk/longfellow-zk). All three ship in the default pylongfellow install. An unknown
+or unbuilt name fails startup.
 
 Open issues on [pylongfellow](https://github.com/pipe23-org/pylongfellow) detail any known
 problems with these backends.
@@ -216,6 +221,9 @@ You should not rely on this code.
 - The session store is in-process.
 - The proof is verified against an empty device-namespace map; the ZK response format carries
   no field holding the map the wallet signed.
+- An `etsi_xml` trust source takes every certificate in the list file as an anchor, including
+  the list's own signer.
+- Log output at info level can contain text supplied by the presenter.
 
 ## License
 

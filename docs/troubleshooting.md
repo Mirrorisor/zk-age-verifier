@@ -3,7 +3,8 @@
 ## A check ended in `untrusted-issuer`
 
 The client only ever sees the bare reason `untrusted-issuer`. The server log says why.
-Look for the `untrusted_issuer` warning:
+Look for the `untrusted_issuer` event. Since 0.5.0 it is logged at debug level, so set
+`log_level = "debug"` under `[service]` first:
 
 ```
 untrusted_issuer  reason='no anchor accepts the presented certificate'

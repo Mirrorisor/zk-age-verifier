@@ -1,7 +1,9 @@
 # Changelog
 
-## Unreleased
+## Unreleased (fork)
 
+- Fork only: merged upstream 0.5.0 (pylongfellow 0.8.0, `log_level`, the real EU Age Verification Trusted Lists as test data). The `untrusted_issuer` event is now logged at debug level, as upstream; set `log_level = "debug"` to see it. The fork still adds the refused certificate as `der_base64`.
+- Fork only: an `etsi_xml` trust source now also trusts services whose status is `recognized`, the status the EU Age Verification Trusted List uses (`http://trust.tech.ec.europa.eu/lists/age-verification/service-status/recognized`). Before, only the ETSI statuses `granted` and `recognisedatnationallevel` counted, so a real EU Age Verification list loaded no anchors. Upstream's four expected-fail tests for #76 on the real lists now pass and are plain tests.
 - Fork only: two passport-based credential kinds can be listed in `credential`: `photo-id` (ISO/IEC 23220 Photo ID, doctype `org.iso.23220.photoid.1`, claims in `org.iso.23220.1`) and `google-id-pass` (Google Wallet ID pass, doctype `com.google.wallet.idcard.1`, claims in `org.iso.18013.5.1`). Values as in Multipaz's document types. Neither is tested with a wallet yet.
 - Fork only: with several credential kinds, the offer is now one `DeviceRequest` with a document request per kind and a `deviceRequestInfo` use case (ISO/IEC 18013-5 second edition) whose document sets each name one of them, so the holder chooses which document to show. Before, each kind was a separate Digital Credentials request entry and Multipaz offered only the first one the holder could answer.
 - Fork only: `[service] credential` also takes a list, such as `["eu-av", "iso-mdl"]`, so one service accepts either kind. The offer carries one Digital Credentials request entry per kind, all sharing the session's `EncryptionInfo`; the response's doctype picks the profile the proof is checked against. A single name works as before.
@@ -15,8 +17,14 @@
 - Fork only: an `etsi_xml` trust source skips services whose status is not `granted` or `recognisedatnationallevel`, and accepts an optional `etsi_xml_sha256` that refuses a list with different content. Without the pin, the service logs `etsi_xml_not_pinned` with the digest ([#76](https://github.com/pipe23-org/zk-age-verifier/issues/76)).
 - Fork only: an `etsi_xml` trust source now takes only certificates listed under a service's `ServiceDigitalIdentity`. Before, every certificate in the file became an anchor, including the list's own signer and past service versions. The list's signature is still not verified ([#76](https://github.com/pipe23-org/zk-age-verifier/issues/76)).
 - Fork only: `test_real_document_signer_resolves_through_real_anchor` pins the clock, because the real document-signer test certificate expired on 2026-09-24. Added a fork notice to the README.
-- An `untrusted-issuer` failure now logs an `untrusted_issuer` warning naming the presented certificate (subject, issuer, validity, SHA-256 fingerprint) and why it was refused. The verdict returned to the client is unchanged ([#76](https://github.com/pipe23-org/zk-age-verifier/issues/76)).
-- Configuration file table and key names are matched case-sensitively; environment variable names are not. Previously the TOML source relied on pydantic-settings' default, which pydantic-settings 2.15 changed to case-insensitive for top-level tables.
+
+## 0.5.0 - 2026-11-15
+
+- Bumped pylongfellow from 0.5.2 to 0.8.0 (#84).
+- `pylongfellow.backend` now accepts `lf-rust`, the backend pylongfellow 0.8.0 added (#84).
+- An `untrusted-issuer` failure now logs an `untrusted_issuer` debug event naming the presented certificate (subject, issuer, validity, SHA-256 fingerprint) and why it was refused. Previously nothing identified the refused certificate. The verdict returned to the client is unchanged (#77, #86).
+- Configuration file table and key names are matched case-sensitively; environment variable names are not. Previously the TOML source relied on pydantic-settings' default, which pydantic-settings 2.15 changed to case-insensitive for top-level tables (#59).
+- `[service]` gains `log_level` (default `info`; env `ZK_AGE_VERIFIER_SERVICE__LOG_LEVEL`), the threshold below which log events are dropped, one of `debug`, `info`, `warning`, `error`. The threshold was fixed at `info`. Any other value fails startup (#86).
 
 ## 0.4.0 - 2026-08-08
 

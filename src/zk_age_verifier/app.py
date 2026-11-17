@@ -61,7 +61,7 @@ def create_app(config: Config) -> FastAPI:
     Returns:
         The configured application.
     """
-    configure_logging()
+    configure_logging(config.service.log_level)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
