@@ -25,6 +25,15 @@ AV_DOCUMENT_SIGNER_PEM = Path(__file__).parents[1] / "data" / "av-document-signe
 AV_DOCUMENT_SIGNER_X = 0x6789E96E797E2E04F7F3CBB54A12410412410DB000FB6D63DC977D8B5D35A4F9
 AV_DOCUMENT_SIGNER_NOT_AFTER = datetime(2026, 9, 24, 10, 57, 10, tzinfo=UTC)
 
+# Real ETSI TS 119 612 trusted lists, not ones this suite builds. See
+# tests/data/README.md. The fingerprints are SHA-256 over the DER certificate.
+AV_TL_PRODUCTION_XML = Path(__file__).parents[1] / "data" / "av-tl-production-2026-11-15.xml"
+AV_TL_ACCEPTANCE_XML = Path(__file__).parents[1] / "data" / "av-tl-acceptance-2026-11-15.xml"
+AV_TL_PRODUCTION_RECOGNIZED = ("1dc89e870cddac990f5585a0265568522531af678592cc73effd9f8706f55995",)
+AV_TL_ACCEPTANCE_RECOGNIZED_COUNT = 12
+AV_TL_ACCEPTANCE_DEPRECATED = "a8234aa8339797c917286fb74797dc538acbbec6fcccb146b984d494a000a349"
+AV_TL_ACCEPTANCE_LIST_SIGNER = "0ccf87a5abf4db89bde4e10202e2523296bea7d835ba6a5a41054b9e1e6b8949"
+
 NOW = datetime.now(UTC)
 
 
@@ -144,12 +153,12 @@ def test_unrelated_cert_rejected() -> None:
         AnchorSet((_self_signed(),)).resolve(_self_signed("stranger"))
 
 
-def test_untrusted_issuer_logs_presented_certificate() -> None:
+def test_untrusted_issuer_logs_presented_certificate_at_debug() -> None:
     stranger = _self_signed("stranger")
     with capture_logs() as logs, pytest.raises(UntrustedIssuer):
         AnchorSet((_self_signed(),)).resolve(stranger)
     (event,) = [entry for entry in logs if entry["event"] == "untrusted_issuer"]
-    assert event["log_level"] == "warning"
+    assert event["log_level"] == "debug"
     assert event["subject"] == "CN=stranger"
     assert event["sha256"] == stranger.fingerprint(hashes.SHA256()).hex()
 
@@ -429,6 +438,14 @@ def test_recognised_at_national_level_counts_as_active(tmp_path: Path) -> None:
     assert load_anchors([TrustSource(etsi_xml=str(listing))]).resolve(anchor)
 
 
+def test_the_age_verification_lists_recognized_status_counts_as_active(tmp_path: Path) -> None:
+    # The EU Age Verification Trusted List uses its own status URI, ending in "recognized".
+    anchor = _self_signed()
+    listing = tmp_path / "tsl.xml"
+    listing.write_bytes(_etsi_xml(anchor, status="recognized"))
+    assert load_anchors([TrustSource(etsi_xml=str(listing))]).resolve(anchor)
+
+
 def test_unpinned_etsi_list_logs_its_digest(tmp_path: Path) -> None:
     listing = tmp_path / "tsl.xml"
     data = _etsi_xml(_self_signed())
@@ -468,3 +485,31 @@ def test_etsi_xml_without_service_certificates_rejected(tmp_path: Path) -> None:
 def test_etsi_xml_http_url_rejected() -> None:
     with pytest.raises(ConfigError, match="http"):
         load_anchors([TrustSource(etsi_xml="http://tsl.example.org/list.xml")])
+
+
+def test_production_recognized_service_loaded() -> None:
+    anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_PRODUCTION_XML))])
+    loaded = {anchor.fingerprint(hashes.SHA256()).hex() for anchor in anchors.anchors}
+    assert loaded == set(AV_TL_PRODUCTION_RECOGNIZED)
+
+
+def test_acceptance_recognized_services_loaded() -> None:
+    anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_ACCEPTANCE_XML))])
+    assert len(anchors.anchors) == AV_TL_ACCEPTANCE_RECOGNIZED_COUNT
+
+
+def test_acceptance_deprecated_service_absent() -> None:
+    anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_ACCEPTANCE_XML))])
+    loaded = {anchor.fingerprint(hashes.SHA256()).hex() for anchor in anchors.anchors}
+    assert AV_TL_ACCEPTANCE_DEPRECATED not in loaded
+
+
+def test_acceptance_list_signer_absent() -> None:
+    anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_ACCEPTANCE_XML))])
+    loaded = {anchor.fingerprint(hashes.SHA256()).hex() for anchor in anchors.anchors}
+    assert AV_TL_ACCEPTANCE_LIST_SIGNER not in loaded
+
+
+# No test states that service-history certificates are left out: the acceptance
+# list holds three service-history instances and one history certificate, and
+# that certificate is the one a current service is also listed under.

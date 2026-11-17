@@ -17,6 +17,9 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
   the proof timestamp and the verifier clock.
 - `cors_allowed_origins` (default empty) — origins granted cross-origin access to the API.
   An empty list sends no CORS headers.
+- `log_level` (default `info`) — the threshold below which log events are dropped, one of
+  `debug`, `info`, `warning`, `error`. Debug output includes the subject, issuer, validity
+  dates, and SHA-256 fingerprint of the certificate a refused presentation supplied.
 
 ## [trust]
 
@@ -25,7 +28,8 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
 - `pem` — a PEM file, or a directory whose `*.pem` files are all loaded.
 - `etsi_xml` — an ETSI trusted list, path or URL; the certificates listed in each service's
   `ServiceDigitalIdentity` become anchors, but only for services whose status is `granted`
-  or `recognisedatnationallevel` (others are skipped, with a log line). The list's own
+  or `recognisedatnationallevel`, or the EU Age Verification Trusted List's `recognized`
+  (others are skipped, with a log line). The list's own
   signature is not verified, and neither is its signer. The signer's certificate and the
   certificates of past service versions are not anchors. Add `etsi_xml_sha256` (the SHA-256
   of the file you reviewed, in hex) to refuse any other content; without it the service logs
@@ -48,9 +52,10 @@ from the environment only and takes no prefix.
 ## Proof engine
 
 The `pylongfellow.backend` key selects the proof engine the service verifies with.
-Registry names: `google-cpp` (google/longfellow-zk), `isrg-rust`
-(abetterinternet/zk-cred-longfellow). Both ship in the default pylongfellow install. An
-unknown or unbuilt name fails startup.
+Registry names: `google-cpp` (the C++ implementation in longfellow-zk/longfellow-zk),
+`isrg-rust` (abetterinternet/zk-cred-longfellow), `lf-rust` (the Rust implementation in
+longfellow-zk/longfellow-zk). All three ship in the default pylongfellow install. An unknown
+or unbuilt name fails startup.
 
 Open issues on [pylongfellow](https://github.com/pipe23-org/pylongfellow) detail any known problems
 with these backends.

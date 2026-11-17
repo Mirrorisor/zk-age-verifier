@@ -29,6 +29,8 @@ from pydantic_settings import (
     TomlConfigSettingsSource,
 )
 
+from zk_age_verifier.log import LogLevel
+
 
 class ConfigError(Exception):
     """Raised when a configuration file is missing, unparseable, or invalid."""
@@ -69,7 +71,7 @@ class PylongfellowConfig(BaseModel):
 
 
 class ServiceConfig(BaseModel):
-    """The ``[service]`` table: origin binding, proof-engine selection, and session hygiene."""
+    """The ``[service]`` table: origin binding, proof engine, session hygiene, and log level."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -79,6 +81,7 @@ class ServiceConfig(BaseModel):
     session_cap: int = 1000
     timestamp_skew_seconds: int = 300
     cors_allowed_origins: list[str] = Field(default_factory=list)
+    log_level: LogLevel = "info"
 
     @field_validator("expected_origin")
     @classmethod

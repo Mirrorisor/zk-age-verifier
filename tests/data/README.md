@@ -43,3 +43,24 @@ Bytes the tests read but did not produce.
   eu-digital-identity-wallet/av-dc-api-backend
   `environment/trust-anchors/age-verification-testing-issuer.pem` (Apache-2.0) at clone HEAD
   `24180068`. Captured 2026-08-04. Copied verbatim.
+- `av-tl-production-2026-11-15.xml` — the EU Age Verification Trusted List, an ETSI TS 119 612
+  trusted list. Source: https://trust.tech.ec.europa.eu/lists/age-verification/av-tl.xml, the
+  URL the eIDAS Dashboard page
+  https://eidas.ec.europa.eu/efda/trust-services/browse/av-tl gives as the list's publication
+  point. Sequence number 5, issued 2026-11-05. It lists one service, with status
+  `recognized`. The file holds eight `X509Certificate` elements: one under that service's
+  `ServiceDigitalIdentity`, six under `PointersToOtherTSL`, and one in the list's `Signature`.
+  Captured 2026-11-15. Copied verbatim. SHA-256
+  `d8cd20567a029c0fbc6b05e8f3a90fc3e6a172bd99869755095bbc82d0a81272`. © European Union. The
+  Commission's legal notice (https://commission.europa.eu/legal-notice_en) licenses EU-owned
+  content under CC BY 4.0.
+- `av-tl-acceptance-2026-11-15.xml` — the test counterpart of that list. Source:
+  https://acceptance.trust.tech.ec.europa.eu/lists/age-verification/av-tl.xml. The Age
+  Verification project documentation (https://ageverification.dev/AV%20Trusted%20List/)
+  describes it as a shared test list with test issuers from several Member States. Sequence
+  number 19, issued 2026-10-08. It lists thirteen services: twelve with status `recognized`
+  and one with status `deprecated`. The file holds 22 `X509Certificate` elements: thirteen
+  under a `ServiceDigitalIdentity`, one under `ServiceHistory`, seven under
+  `PointersToOtherTSL`, and one in the list's `Signature`. Captured 2026-11-15. Copied
+  verbatim. SHA-256 `50efeb9b05fc68d4fc7e7797851a8a9ac480f2992b22b2a77e2134454019de69`. Same
+  copyright and licence as the production list.

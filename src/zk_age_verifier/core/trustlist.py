@@ -104,11 +104,11 @@ def _log_untrusted(cert: x509.Certificate, reason: str) -> None:
     """Log which certificate was refused, so an operator can tell why.
 
     The verdict a client sees stays the bare ``untrusted-issuer``; this detail
-    goes to the server log only. It names the presented certificate and its
+    goes to the debug log only. It names the presented certificate and its
     SHA-256 fingerprint, which is what an operator compares against the anchors
     they configured (https://github.com/pipe23-org/zk-age-verifier/issues/76).
     """
-    log.warning(
+    log.debug(
         "untrusted_issuer",
         reason=reason,
         subject=cert.subject.rfc4514_string(),
@@ -257,9 +257,13 @@ def _load_pem(location: str) -> list[x509.Certificate]:
     return anchors
 
 
-# ETSI service statuses whose certificates are trusted; every other status (withdrawn,
-# deprecated, revoked, ...) is skipped. A service with no status is skipped too.
-_ACTIVE_SERVICE_STATUSES = frozenset({"granted", "recognisedatnationallevel"})
+# Service statuses whose certificates are trusted, by the last segment of the status URI;
+# every other status (withdrawn, deprecated, revoked, ...) is skipped, and so is a service
+# with no status. "granted" and "recognisedatnationallevel" are the ETSI TS 119 612 ones
+# (http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/...); "recognized" is the EU Age
+# Verification Trusted List's own
+# (http://trust.tech.ec.europa.eu/lists/age-verification/service-status/recognized).
+_ACTIVE_SERVICE_STATUSES = frozenset({"granted", "recognisedatnationallevel", "recognized"})
 
 
 def _load_etsi_xml(location: str, pinned_sha256: str | None = None) -> list[x509.Certificate]:

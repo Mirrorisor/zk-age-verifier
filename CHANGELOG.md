@@ -2,9 +2,15 @@
 
 ## Unreleased
 
-- An `untrusted-issuer` failure now logs an `untrusted_issuer` warning naming the presented certificate (subject, issuer, validity, SHA-256 fingerprint) and why it was refused. The verdict returned to the client is unchanged ([#76](https://github.com/pipe23-org/zk-age-verifier/issues/76)).
-- An `etsi_xml` trust source now takes only certificates listed under a service's `ServiceDigitalIdentity` (not the list's own signer or past service versions), and skips services whose status is not `granted` or `recognisedatnationallevel`. A new optional `etsi_xml_sha256` refuses a list with different content; without it the service logs `etsi_xml_not_pinned` with the digest. The list's own signature is still not verified ([#76](https://github.com/pipe23-org/zk-age-verifier/issues/76)).
-- Configuration file table and key names are matched case-sensitively; environment variable names are not. Previously the TOML source relied on pydantic-settings' default, which pydantic-settings 2.15 changed to case-insensitive for top-level tables.
+- An `etsi_xml` trust source now takes only certificates listed under a service's `ServiceDigitalIdentity` (not the list's own signer, pointers to other lists, or past service versions), and skips services whose status is not active: `granted` or `recognisedatnationallevel` (ETSI TS 119 612) or `recognized` (the EU Age Verification Trusted List). A new optional `etsi_xml_sha256` refuses a list with different content; without it the service logs `etsi_xml_not_pinned` with the digest. The list's own signature is still not verified ([#76](https://github.com/pipe23-org/zk-age-verifier/issues/76)).
+
+## 0.5.0 - 2026-11-15
+
+- Bumped pylongfellow from 0.5.2 to 0.8.0 (#84).
+- `pylongfellow.backend` now accepts `lf-rust`, the backend pylongfellow 0.8.0 added (#84).
+- An `untrusted-issuer` failure now logs an `untrusted_issuer` debug event naming the presented certificate (subject, issuer, validity, SHA-256 fingerprint) and why it was refused. Previously nothing identified the refused certificate. The verdict returned to the client is unchanged (#77, #86).
+- Configuration file table and key names are matched case-sensitively; environment variable names are not. Previously the TOML source relied on pydantic-settings' default, which pydantic-settings 2.15 changed to case-insensitive for top-level tables (#59).
+- `[service]` gains `log_level` (default `info`; env `ZK_AGE_VERIFIER_SERVICE__LOG_LEVEL`), the threshold below which log events are dropped, one of `debug`, `info`, `warning`, `error`. The threshold was fixed at `info`. Any other value fails startup (#86).
 
 ## 0.4.0 - 2026-08-08
 
