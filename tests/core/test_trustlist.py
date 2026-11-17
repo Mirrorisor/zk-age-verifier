@@ -335,6 +335,11 @@ class _ClockAt:
     def now(self, tz: tzinfo) -> datetime:
         return self._instant.astimezone(tz)
 
+    @staticmethod
+    def fromisoformat(text: str) -> datetime:
+        # The fork's NextUpdate check parses the list's date through the same name.
+        return datetime.fromisoformat(text)
+
 
 def test_real_document_signer_resolves_through_real_anchor(
     monkeypatch: pytest.MonkeyPatch,
