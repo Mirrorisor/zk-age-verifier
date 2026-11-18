@@ -220,6 +220,17 @@ def test_service_forbids_unknown_key() -> None:
             "etsi_lotl_signer": "/etc/lotl-signer.pem",
             "etsi_lotl_territories": ["EE", "lv"],
         },
+        {
+            "vical": "https://x/vical.cbor",
+            "vical_signer": "/etc/vical-ca.pem",
+            "vical_doc_types": ["org.iso.18013.5.1.mDL"],
+        },
+        {
+            "vical": "/etc/vical.cbor",
+            "vical_signer": "/etc/vical-ca.pem",
+            "vical_doc_types": ["org.iso.18013.5.1.mDL"],
+            "vical_countries": ["AU", "nz"],
+        },
     ],
 )
 def test_valid_trust_source(kwargs: dict[str, object]) -> None:
@@ -250,6 +261,29 @@ def test_valid_trust_source(kwargs: dict[str, object]) -> None:
             "etsi_lotl": "https://x/l.xml",
             "etsi_lotl_signer": "/s.pem",
             "etsi_lotl_territories": ["EE"],
+        },  # two keys
+        {"vical": "/v.cbor", "vical_doc_types": ["org.iso.18013.5.1.mDL"]},  # no signer
+        {"vical": "/v.cbor", "vical_signer": "/s.pem"},  # no doc types
+        {"vical": "/v.cbor", "vical_signer": "/s.pem", "vical_doc_types": []},
+        {
+            "vical": "/v.cbor",
+            "vical_signer": "/s.pem",
+            "vical_doc_types": ["org.iso.18013.5.1.mDL"],
+            "vical_countries": [],  # empty
+        },
+        {
+            "vical": "/v.cbor",
+            "vical_signer": "/s.pem",
+            "vical_doc_types": ["org.iso.18013.5.1.mDL"],
+            "vical_countries": ["AUS"],  # not a two-letter code
+        },
+        {"pem": "/etc/anchors", "vical_signer": "/s.pem"},  # VICAL keys need a vical
+        {"pem": "/etc/anchors", "vical_countries": ["AU"]},
+        {
+            "pem": "/etc/anchors",
+            "vical": "/v.cbor",
+            "vical_signer": "/s.pem",
+            "vical_doc_types": ["org.iso.18013.5.1.mDL"],
         },  # two keys
     ],
 )

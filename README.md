@@ -117,7 +117,8 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
 
 ### [trust]
 
-`[[trust.sources]]` entries form a non-empty list. Each entry sets exactly one of `pem`, `etsi_xml` or `etsi_lotl`:
+`[[trust.sources]]` entries form a non-empty list. Each entry sets exactly one of `pem`, `etsi_xml`, `etsi_lotl`
+or `vical`:
 
 - `pem` — a PEM file, or a directory whose `*.pem` files are all loaded.
 - `etsi_xml` — an ETSI trusted list, path or URL; the certificates listed in each service's
@@ -148,6 +149,22 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
   pointer. Its services become anchors under the same status rules as `etsi_xml`. If any
   chosen list is missing, unsigned, wrongly signed or past its `NextUpdate`, startup stops;
   nothing is loaded in part.
+- `vical` — a VICAL (path or URL): the signed CBOR list of issuer root certificates (IACAs)
+  that mobile driving licence programmes publish (ISO/IEC 18013-5 Annex C), such as AAMVA's
+  for US states or, when available, the one Austroads is preparing for Australia. It needs:
+  - `vical_signer` — a PEM file holding the VICAL signer's certificate, or the certificate
+    that issued it (the provider's VICAL root). The list's COSE signature must come from the
+    certificate in its `x5chain` header, and that certificate must be this one or be issued
+    directly by it, and be valid today. ES256, ES384 and ES512 are accepted.
+  - `vical_doc_types` — the document types whose issuers to trust, for example
+    `["org.iso.18013.5.1.mDL"]`. An issuer listed only for other types is not loaded.
+  - `vical_countries` (optional) — two-letter `issuingCountry` codes, for example `["AU"]`.
+
+  A VICAL past its `nextUpdate` or `notAfter` is refused, and so is one that lists no issuer
+  for the chosen types and countries. An issuer entry whose certificate cannot be read is
+  skipped with a `vical_bad_certificate` warning. Loaded issuers vouch for every credential
+  kind the service accepts, so give a VICAL source only the document types you mean to
+  accept.
 
 Every listed anchor is authorized to vouch for age credentials. Sources that resolve to
 zero anchors fail startup.

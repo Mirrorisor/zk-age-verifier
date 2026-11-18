@@ -113,7 +113,7 @@ class ServiceConfig(BaseModel):
 
 
 class TrustSource(BaseModel):
-    """One ``[trust]`` source: exactly one of ``pem``, ``etsi_xml``, ``etsi_lotl``."""
+    """One ``[trust]`` source: exactly one of ``pem``, ``etsi_xml``, ``etsi_lotl``, ``vical``."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -133,6 +133,13 @@ class TrustSource(BaseModel):
     etsi_lotl: str | None = None
     etsi_lotl_signer: str | None = None
     etsi_lotl_territories: list[str] | None = None
+    # A VICAL (ISO/IEC 18013-5 Annex C issuer list, path or URL). Its COSE signature must
+    # come from the certificate in vical_signer or one issued by it; only issuers listed
+    # for vical_doc_types (and, if set, vical_countries) become anchors.
+    vical: str | None = None
+    vical_signer: str | None = None
+    vical_doc_types: list[str] | None = None
+    vical_countries: list[str] | None = None
 
     @model_validator(mode="after")
     def _validate_single_source(self) -> "TrustSource":
@@ -154,18 +161,39 @@ class TrustSource(BaseModel):
                 )
             if not all(len(t) == 2 and t.isascii() and t.isalpha() for t in territories):
                 raise ValueError("etsi_lotl_territories must be two-letter country codes")
+        self._validate_vical()
         set_keys = [
             key
             for key, value in (
                 ("pem", self.pem),
                 ("etsi_xml", self.etsi_xml),
                 ("etsi_lotl", self.etsi_lotl),
+                ("vical", self.vical),
             )
             if value is not None
         ]
         if len(set_keys) != 1:
-            raise ValueError("each trust source must set exactly one of pem, etsi_xml, etsi_lotl")
+            raise ValueError(
+                "each trust source must set exactly one of pem, etsi_xml, etsi_lotl, vical"
+            )
         return self
+
+    def _validate_vical(self) -> None:
+        """Reject VICAL settings without a VICAL, or a VICAL without a signer and types."""
+        extras = (self.vical_signer, self.vical_doc_types, self.vical_countries)
+        if self.vical is None:
+            if any(value is not None for value in extras):
+                raise ValueError(
+                    "vical_signer, vical_doc_types and vical_countries can only be used with vical"
+                )
+            return
+        if self.vical_signer is None or not self.vical_doc_types:
+            raise ValueError("vical needs vical_signer and a non-empty vical_doc_types")
+        if self.vical_countries is not None and not (
+            self.vical_countries
+            and all(len(c) == 2 and c.isascii() and c.isalpha() for c in self.vical_countries)
+        ):
+            raise ValueError("vical_countries must be a non-empty list of two-letter country codes")
 
 
 class TrustConfig(BaseModel):

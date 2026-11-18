@@ -34,6 +34,7 @@ from signxml.exceptions import SignXMLException
 from signxml.verifier import SignatureConfiguration, XMLVerifier
 
 from zk_age_verifier.config import ConfigError, TrustSource
+from zk_age_verifier.core.vical import load_vical
 
 log = structlog.get_logger(__name__)
 
@@ -333,6 +334,8 @@ def load_anchors(sources: list[TrustSource]) -> AnchorSet:
             anchors.extend(_load_pem(source.pem))
         elif source.etsi_lotl is not None:
             anchors.extend(_load_lotl(source))
+        elif source.vical is not None:
+            anchors.extend(_load_vical(source))
         else:
             anchors.extend(
                 _load_etsi_xml(
@@ -641,6 +644,23 @@ def _load_lotl(source: TrustSource) -> list[x509.Certificate]:
             )
             anchors.extend(found)
     return anchors
+
+
+def _load_vical(source: TrustSource) -> list[x509.Certificate]:
+    """Load issuer roots from a VICAL, signed by ``vical_signer`` or a certificate it issued.
+
+    Raises:
+        ConfigError: The VICAL cannot be read, is not trusted, has expired or lists no
+            matching issuer.
+    """
+    location = cast(str, source.vical)
+    return load_vical(
+        _fetch(location),
+        _read_signer(cast(str, source.vical_signer)),
+        cast(list[str], source.vical_doc_types),
+        source.vical_countries,
+        location,
+    )
 
 
 def _service_status(information: ElementTree.Element) -> str:
