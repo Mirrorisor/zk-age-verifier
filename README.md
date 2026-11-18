@@ -97,9 +97,11 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
 
 - `pem` — a PEM file, or a directory whose `*.pem` files are all loaded.
 - `etsi_xml` — an ETSI trusted list, path or URL; the certificates listed in each service's
-  `ServiceDigitalIdentity` become anchors, but only for services whose status is `granted`
-  or `recognisedatnationallevel`, or the EU Age Verification Trusted List's `recognized`
-  (others are skipped, with a log line). The list's own
+  `ServiceDigitalIdentity` become anchors, but only for services of the EU Age Verification
+  Trusted List's age-attestation type
+  (`http://trust.tech.ec.europa.eu/lists/age-verification/service-type/paa`) whose status is
+  `granted` or `recognisedatnationallevel`, or that list's `recognized` (others are skipped,
+  with a log line). The list's own
   signature is not verified, and neither is its signer. The signer's certificate and the
   certificates of past service versions are not anchors. To use a fixed list you have
   reviewed, point `etsi_xml` at a local copy.
