@@ -351,3 +351,29 @@ def test_a_vical_trust_source_loads_through_load_anchors(tmp_path: Path) -> None
     )
     anchors = load_anchors([source])
     assert anchors.anchors == (root,)
+
+
+def test_an_algorithm_for_another_curve_is_refused() -> None:
+    provider = _Provider(ec.SECP384R1())
+    data = provider.sign(_content([_entry(_self_signed())]), alg=-7, digest=hashes.SHA256())
+    with pytest.raises(ConfigError, match="algorithm for secp256r1, but the signer key is on"):
+        _load(data, provider.ca)
+
+
+def test_a_vical_without_a_next_update_loads_with_a_warning() -> None:
+    provider = _Provider()
+    root = _self_signed()
+    with capture_logs() as logs:
+        anchors = _load(provider.sign(_content([_entry(root)], nextUpdate=None)), provider.ca)
+    assert anchors == [root]
+    assert [entry for entry in logs if entry["event"] == "vical_no_next_update"]
+
+
+def test_a_listed_issuer_outside_its_validity_is_skipped_with_a_warning() -> None:
+    provider = _Provider()
+    current, expired = _self_signed("current"), _self_signed("expired", NOW - timedelta(hours=1))
+    with capture_logs() as logs:
+        anchors = _load(provider.sign(_content([_entry(expired), _entry(current)])), provider.ca)
+    assert anchors == [current]
+    (event,) = [entry for entry in logs if entry["event"] == "vical_certificate_not_valid_now"]
+    assert event["issuing_authority"] == "Test road authority"

@@ -8,7 +8,8 @@ header. AAMVA publishes one for US states, and Austroads is building one for Aus
 Trust passes from one certificate the operator configures: the signer's certificate
 must be that certificate or be issued directly by it, the signature must verify, and
 the list must not be past its ``nextUpdate`` or ``notAfter``. Only the issuers listed
-for the chosen document types (and, optionally, countries) become anchors.
+for the chosen document types (and, optionally, countries), whose certificates are valid
+today, become anchors. The algorithm in the header must match the signer key's curve.
 """
 
 from collections.abc import Mapping
@@ -30,11 +31,12 @@ log = structlog.get_logger()
 _COSE_SIGN1_TAG = 18
 _HEADER_ALG = 1
 _HEADER_X5CHAIN = 33
-# COSE algorithm identifiers (RFC 9053) for ECDSA, the only kind ISO 18013-5 allows.
-_ALGORITHMS: dict[int, type[hashes.HashAlgorithm]] = {
-    -7: hashes.SHA256,
-    -35: hashes.SHA384,
-    -36: hashes.SHA512,
+# COSE algorithm identifiers (RFC 9053) for ECDSA, the only kind ISO 18013-5 allows,
+# each with its hash and the curve the signer's key must be on.
+_ALGORITHMS: dict[int, tuple[type[hashes.HashAlgorithm], type[ec.EllipticCurve]]] = {
+    -7: (hashes.SHA256, ec.SECP256R1),
+    -35: (hashes.SHA384, ec.SECP384R1),
+    -36: (hashes.SHA512, ec.SECP521R1),
 }
 
 
@@ -75,6 +77,8 @@ def load_vical(
             raise ConfigError(
                 f"VICAL {location} expired: its {field} was {content[field]}; fetch a current list"
             )
+    if "nextUpdate" not in content:
+        log.warning("vical_no_next_update", location=location)
     anchors = _issuers(content, set(doc_types), countries, location)
     log.info(
         "vical_loaded",
@@ -153,16 +157,22 @@ def _check_signer(signer: x509.Certificate, trusted: x509.Certificate, location:
 
 def _check_signature(
     signer: x509.Certificate,
-    algorithm: type[hashes.HashAlgorithm],
+    algorithm: tuple[type[hashes.HashAlgorithm], type[ec.EllipticCurve]],
     protected: bytes,
     payload: bytes,
     signature: bytes,
     location: str,
 ) -> None:
     """Verify the COSE_Sign1 signature (raw r || s) over its Sig_structure."""
+    digest, curve = algorithm
     key = signer.public_key()
     if not isinstance(key, ec.EllipticCurvePublicKey):
         raise ConfigError(f"VICAL {location} signer key is not an elliptic-curve key")
+    if not isinstance(key.curve, curve):
+        raise ConfigError(
+            f"VICAL {location} names an algorithm for {curve.name}, "
+            f"but the signer key is on {key.curve.name}"
+        )
     size = (key.curve.key_size + 7) // 8
     if len(signature) != 2 * size:
         raise ConfigError(f"VICAL {location} signature has the wrong length")
@@ -171,7 +181,7 @@ def _check_signature(
     )
     to_be_signed = cbor2.dumps(["Signature1", protected, b"", payload])
     try:
-        key.verify(der, to_be_signed, ec.ECDSA(algorithm()))
+        key.verify(der, to_be_signed, ec.ECDSA(digest()))
     except InvalidSignature as exc:
         raise ConfigError(f"VICAL {location} failed its signature check") from exc
 
@@ -196,6 +206,7 @@ def _issuers(
     if not isinstance(entries, (list, tuple)):
         raise ConfigError(f"VICAL {location} has no certificateInfos list")
     wanted_countries = {country.upper() for country in countries} if countries else None
+    now = datetime.now(UTC)
     anchors: list[x509.Certificate] = []
     for entry in entries:
         if not isinstance(entry, Mapping):
@@ -208,15 +219,26 @@ def _issuers(
             not isinstance(country, str) or country.upper() not in wanted_countries
         ):
             continue
-        certificate = entry.get("certificate")
         try:
-            anchors.append(x509.load_der_x509_certificate(cast(bytes, certificate)))
+            certificate = x509.load_der_x509_certificate(cast(bytes, entry.get("certificate")))
         except (ValueError, TypeError):
             log.warning(
                 "vical_bad_certificate",
                 location=location,
                 issuing_authority=entry.get("issuingAuthority"),
             )
+            continue
+        # An issuer root outside its validity cannot vouch for anything; the anchor set
+        # itself does not look at anchor dates, so drop it here.
+        if not certificate.not_valid_before_utc <= now <= certificate.not_valid_after_utc:
+            log.warning(
+                "vical_certificate_not_valid_now",
+                location=location,
+                issuing_authority=entry.get("issuingAuthority"),
+                not_after=certificate.not_valid_after_utc.isoformat(),
+            )
+            continue
+        anchors.append(certificate)
     if not anchors:
         raise ConfigError(
             f"VICAL {location} lists no issuer for doc types {sorted(doc_types)}"

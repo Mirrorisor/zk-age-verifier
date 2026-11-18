@@ -155,14 +155,17 @@ or `vical`:
   - `vical_signer` — a PEM file holding the VICAL signer's certificate, or the certificate
     that issued it (the provider's VICAL root). The list's COSE signature must come from the
     certificate in its `x5chain` header, and that certificate must be this one or be issued
-    directly by it, and be valid today. ES256, ES384 and ES512 are accepted.
+    directly by it, and be valid today. ES256, ES384 and ES512 are accepted, each only with
+    its own curve (P-256, P-384, P-521).
   - `vical_doc_types` — the document types whose issuers to trust, for example
     `["org.iso.18013.5.1.mDL"]`. An issuer listed only for other types is not loaded.
   - `vical_countries` (optional) — two-letter `issuingCountry` codes, for example `["AU"]`.
 
   A VICAL past its `nextUpdate` or `notAfter` is refused, and so is one that lists no issuer
-  for the chosen types and countries. An issuer entry whose certificate cannot be read is
-  skipped with a `vical_bad_certificate` warning. Loaded issuers vouch for every credential
+  for the chosen types and countries; one without a `nextUpdate` loads with a
+  `vical_no_next_update` warning. An issuer entry whose certificate cannot be read is
+  skipped with a `vical_bad_certificate` warning, and one whose certificate is not valid
+  today with `vical_certificate_not_valid_now`. Loaded issuers vouch for every credential
   kind the service accepts, so give a VICAL source only the document types you mean to
   accept.
 
