@@ -256,8 +256,20 @@ def _load_pem(location: str) -> list[x509.Certificate]:
     return anchors
 
 
+# Service statuses whose certificates are trusted, by the last segment of the status URI;
+# every other status (withdrawn, deprecated, revoked, ...) is skipped, and so is a service
+# with no status. "granted" and "recognisedatnationallevel" are the ETSI TS 119 612 ones
+# (http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/...); "recognized" is the EU Age
+# Verification Trusted List's own
+# (http://trust.tech.ec.europa.eu/lists/age-verification/service-status/recognized).
+_ACTIVE_SERVICE_STATUSES = frozenset({"granted", "recognisedatnationallevel", "recognized"})
+
+
 def _load_etsi_xml(location: str) -> list[x509.Certificate]:
-    """Fetch and parse an ETSI list from a path or URL, extracting its certificates.
+    """Fetch and parse an ETSI list from a path or URL, extracting its service certificates.
+
+    The list's own signature is not verified. An operator who wants a fixed, reviewed
+    list points ``etsi_xml`` at a local copy.
 
     Raises:
         ConfigError: The location is an ``http`` URL. A trust list fetched
@@ -276,8 +288,35 @@ def _load_etsi_xml(location: str) -> list[x509.Certificate]:
         data = Path(location).read_bytes()
     root = ElementTree.fromstring(data)
     anchors: list[x509.Certificate] = []
-    for element in root.iter():
-        if element.tag.rsplit("}", 1)[-1] == "X509Certificate" and element.text:
-            der = base64.b64decode("".join(element.text.split()))
-            anchors.append(x509.load_der_x509_certificate(der))
+    # Only the certificates a service is listed under are anchors. The list's
+    # own signer certificate (in ds:Signature) and the certificates of past
+    # service versions (ServiceHistory) are in the same file but are not
+    # anchors. https://github.com/pipe23-org/zk-age-verifier/issues/76
+    for information in root.iter():
+        if _local_name(information.tag) != "ServiceInformation":
+            continue
+        status = _service_status(information)
+        if status not in _ACTIVE_SERVICE_STATUSES:
+            log.warning("etsi_service_skipped", status=status)
+            continue
+        for identity in information:
+            if _local_name(identity.tag) != "ServiceDigitalIdentity":
+                continue
+            for element in identity.iter():
+                if _local_name(element.tag) == "X509Certificate" and element.text:
+                    der = base64.b64decode("".join(element.text.split()))
+                    anchors.append(x509.load_der_x509_certificate(der))
     return anchors
+
+
+def _service_status(information: ElementTree.Element) -> str:
+    """Return the last path segment of a service's ``ServiceStatus`` URI, or ``""``."""
+    for child in information:
+        if _local_name(child.tag) == "ServiceStatus":
+            return "".join((child.text or "").split()).rsplit("/", 1)[-1]
+    return ""
+
+
+def _local_name(tag: str) -> str:
+    """Return an XML tag without its ``{namespace}`` prefix."""
+    return tag.rsplit("}", 1)[-1]

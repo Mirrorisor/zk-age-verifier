@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- An `etsi_xml` trust source now takes as anchors only the certificates in the `ServiceDigitalIdentity` of services with status `granted`, `recognisedatnationallevel` or `recognized`, where it took every certificate in the file (#78).
+
 ## 0.5.0 - 2026-11-15
 
 - Bumped pylongfellow from 0.5.2 to 0.8.0 (#84).

@@ -26,7 +26,11 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
 `[[trust.sources]]` entries form a non-empty list. Each entry sets exactly one of:
 
 - `pem` — a PEM file, or a directory whose `*.pem` files are all loaded.
-- `etsi_xml` — an ETSI trusted list, path or URL; its certificates become anchors.
+- `etsi_xml` — an ETSI trusted list, path or URL. The certificates in the
+  `ServiceDigitalIdentity` of each active service become anchors. Active statuses are
+  `granted` and `recognisedatnationallevel` (ETSI TS 119 612) and `recognized` (EU Age
+  Verification Trusted List). A service with any other status is skipped and logged as
+  `etsi_service_skipped`.
 
 Every listed anchor is authorized to vouch for age credentials. Sources that resolve to
 zero anchors fail startup.
