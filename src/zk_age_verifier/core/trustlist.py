@@ -7,9 +7,10 @@ key coordinates are returned, the only value the trust layer feeds the proof
 check. The credential's own issuer signature is validated inside the ZK proof.
 This module only decides which issuer key the proof is allowed to satisfy.
 
-ETSI list handling extracts certificates from the XML and stops there: TSL
-semantics and XAdES signature validation are out of scope, so an ETSI source is
-trusted by its pinned path or URL, not by a checked list signature.
+ETSI list handling extracts certificates from the XML. TSL semantics beyond the
+service type and status and the list's NextUpdate time, and XAdES signature
+validation, are out of scope, so an ETSI source is trusted by its pinned path or URL,
+not by a checked list signature.
 """
 
 import base64
@@ -283,7 +284,8 @@ def _load_etsi_xml(location: str) -> list[x509.Certificate]:
     Raises:
         ConfigError: The location is an ``http`` URL. A trust list fetched
             over plain http can be replaced in transit, so only ``https``
-            URLs and local file paths are accepted.
+            URLs and local file paths are accepted. Also raised when the list's
+            ``NextUpdate`` time has passed or is not a date and time.
     """
     scheme = urlsplit(location).scheme
     if scheme == "http":
@@ -296,6 +298,7 @@ def _load_etsi_xml(location: str) -> list[x509.Certificate]:
     else:
         data = Path(location).read_bytes()
     root = ElementTree.fromstring(data)
+    _check_next_update(root, location)
     anchors: list[x509.Certificate] = []
     # Only the certificates a service is listed under are anchors. The list's
     # own signer certificate (in ds:Signature) and the certificates of past
@@ -317,6 +320,39 @@ def _load_etsi_xml(location: str) -> list[x509.Certificate]:
                     der = base64.b64decode("".join(element.text.split()))
                     anchors.append(x509.load_der_x509_certificate(der))
     return anchors
+
+
+def _check_next_update(root: ElementTree.Element, location: str) -> None:
+    """Refuse a list whose own ``NextUpdate`` time has passed.
+
+    A list states when its next issue is due; after that moment it is stale, and a stale
+    list may be an old copy replayed by someone who wants a withdrawn service trusted
+    again. A list without a usable ``NextUpdate`` is accepted with a warning, because
+    lists that are not meant to be updated leave it empty.
+
+    Raises:
+        ConfigError: The ``NextUpdate`` is not a date and time, or is in the past.
+    """
+    for element in root.iter():
+        if _local_name(element.tag) != "NextUpdate":
+            continue
+        stamp = "".join("".join(element.itertext()).split())
+        if not stamp:
+            break
+        try:
+            due = datetime.fromisoformat(stamp)
+        except ValueError as exc:
+            raise ConfigError(
+                f"trust list {location} has a NextUpdate that is not a date and time: {stamp!r}"
+            ) from exc
+        if due.tzinfo is None:
+            due = due.replace(tzinfo=UTC)
+        if due <= datetime.now(UTC):
+            raise ConfigError(
+                f"trust list {location} expired: its NextUpdate was {stamp}; fetch a current list"
+            )
+        return
+    log.warning("etsi_xml_no_next_update", location=location)
 
 
 def _service_field(information: ElementTree.Element, name: str) -> str:

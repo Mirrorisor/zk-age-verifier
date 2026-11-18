@@ -191,6 +191,11 @@ class _ClockAt:
     def now(self, tz: tzinfo) -> datetime:
         return self._instant.astimezone(tz)
 
+    @staticmethod
+    def fromisoformat(text: str) -> datetime:
+        # The NextUpdate check parses the list's date through the same name.
+        return datetime.fromisoformat(text)
+
 
 def test_real_document_signer_resolves_through_real_anchor(
     monkeypatch: pytest.MonkeyPatch,
@@ -348,12 +353,14 @@ def _etsi_xml(
     other: tuple[x509.Certificate, str | None]
     | tuple[x509.Certificate, str | None, str | None]
     | None = None,
+    next_update: str | None = None,
 ) -> bytes:
     """Build a minimal trusted list: one service per cert, plus optional decoys.
 
     ``signer`` is placed where a list's own signature certificate goes, ``history``
     where a past service version's goes, and ``other`` is one more service with its
-    own status (and, optionally, its own service type).
+    own status (and, optionally, its own service type). ``next_update`` is the inner XML
+    of the list's ``NextUpdate`` element; None leaves the element out.
     """
     services = "".join(_service_xml(cert, status) for cert in certs)
     if empty_certificate:
@@ -375,9 +382,14 @@ def _etsi_xml(
             f"<ds:X509Certificate>{_b64_der(signer)}</ds:X509Certificate>"
             "</ds:X509Data></ds:KeyInfo></ds:Signature>"
         )
+    scheme = (
+        f"<SchemeInformation><NextUpdate>{next_update}</NextUpdate></SchemeInformation>"
+        if next_update is not None
+        else ""
+    )
     return (
         '<TrustServiceStatusList xmlns="http://uri.etsi.org/02231/v2#">'
-        f"<TrustServiceProviderList><TrustServiceProvider><TSPServices>{services}"
+        f"{scheme}<TrustServiceProviderList><TrustServiceProvider><TSPServices>{services}"
         f"</TSPServices></TrustServiceProvider></TrustServiceProviderList>{signature}"
         "</TrustServiceStatusList>"
     ).encode("ascii")
@@ -488,24 +500,75 @@ def test_etsi_xml_http_url_rejected() -> None:
         load_anchors([TrustSource(etsi_xml="http://tsl.example.org/list.xml")])
 
 
-def test_production_recognized_service_loaded() -> None:
+def _list_file(tmp_path: Path, next_update: str | None) -> TrustSource:
+    listing = tmp_path / "tsl.xml"
+    listing.write_bytes(_etsi_xml(_self_signed(), next_update=next_update))
+    return TrustSource(etsi_xml=str(listing))
+
+
+@pytest.mark.parametrize(
+    "stamp", ["2999-01-01T00:00:00Z", "2999-01-01T00:00:00+02:00", "2999-01-01T00:00:00"]
+)
+def test_a_list_before_its_next_update_loads(tmp_path: Path, stamp: str) -> None:
+    with capture_logs() as logs:
+        load_anchors([_list_file(tmp_path, f"<dateTime>{stamp}</dateTime>")])
+    assert not [entry for entry in logs if entry["event"] == "etsi_xml_no_next_update"]
+
+
+def test_a_list_past_its_next_update_is_refused(tmp_path: Path) -> None:
+    source = _list_file(tmp_path, "<dateTime>2000-01-01T00:00:00Z</dateTime>")
+    with pytest.raises(ConfigError, match="expired"):
+        load_anchors([source])
+
+
+def test_a_next_update_that_is_not_a_date_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="not a date and time"):
+        load_anchors([_list_file(tmp_path, "<dateTime>soon</dateTime>")])
+
+
+@pytest.mark.parametrize("next_update", [None, "", "<dateTime>  </dateTime>"])
+def test_a_list_without_a_usable_next_update_loads_with_a_warning(
+    tmp_path: Path, next_update: str | None
+) -> None:
+    with capture_logs() as logs:
+        load_anchors([_list_file(tmp_path, next_update)])
+    assert [entry for entry in logs if entry["event"] == "etsi_xml_no_next_update"]
+
+
+def test_real_lists_expire_at_their_next_update(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The production list captured on 2026-11-15 is due again on 2027-04-28 13:00 UTC.
+    monkeypatch.setattr(trustlist, "datetime", _ClockAt(datetime(2027, 4, 28, 13, tzinfo=UTC)))
+    with pytest.raises(ConfigError, match="expired"):
+        load_anchors([TrustSource(etsi_xml=str(AV_TL_PRODUCTION_XML))])
+
+
+def _at_capture_day(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin the clock to the day the real lists were captured, before their NextUpdate."""
+    monkeypatch.setattr(trustlist, "datetime", _ClockAt(datetime(2026, 11, 15, tzinfo=UTC)))
+
+
+def test_production_recognized_service_loaded(monkeypatch: pytest.MonkeyPatch) -> None:
+    _at_capture_day(monkeypatch)
     anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_PRODUCTION_XML))])
     loaded = {anchor.fingerprint(hashes.SHA256()).hex() for anchor in anchors.anchors}
     assert loaded == set(AV_TL_PRODUCTION_RECOGNIZED)
 
 
-def test_acceptance_recognized_services_loaded() -> None:
+def test_acceptance_recognized_services_loaded(monkeypatch: pytest.MonkeyPatch) -> None:
+    _at_capture_day(monkeypatch)
     anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_ACCEPTANCE_XML))])
     assert len(anchors.anchors) == AV_TL_ACCEPTANCE_RECOGNIZED_COUNT
 
 
-def test_acceptance_deprecated_service_absent() -> None:
+def test_acceptance_deprecated_service_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    _at_capture_day(monkeypatch)
     anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_ACCEPTANCE_XML))])
     loaded = {anchor.fingerprint(hashes.SHA256()).hex() for anchor in anchors.anchors}
     assert AV_TL_ACCEPTANCE_DEPRECATED not in loaded
 
 
-def test_acceptance_list_signer_absent() -> None:
+def test_acceptance_list_signer_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    _at_capture_day(monkeypatch)
     anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_ACCEPTANCE_XML))])
     loaded = {anchor.fingerprint(hashes.SHA256()).hex() for anchor in anchors.anchors}
     assert AV_TL_ACCEPTANCE_LIST_SIGNER not in loaded

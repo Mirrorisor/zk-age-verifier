@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- An `etsi_xml` list whose own `NextUpdate` time has passed is refused at startup, so an old copy of a list cannot bring back a withdrawn service. A `NextUpdate` that is not a date and time is refused too; a list without one loads and logs `etsi_xml_no_next_update`.
 - An `etsi_xml` trust source now takes certificates only from services of the age-attestation type, `http://trust.tech.ec.europa.eu/lists/age-verification/service-type/paa` (the EU Age Verification Trusted List). Services of any other type, or with no type, are skipped with an `etsi_service_skipped` log line, which now also names the service type (#82).
 - An `etsi_xml` trust source now takes only certificates listed under a service's `ServiceDigitalIdentity` (not the list's own signer, pointers to other lists, or past service versions), and skips services whose status is not active: `granted` or `recognisedatnationallevel` (ETSI TS 119 612) or `recognized` (the EU Age Verification Trusted List). The list's own signature is still not verified (#78).
 
