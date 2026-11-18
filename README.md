@@ -101,9 +101,8 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
   or `recognisedatnationallevel`, or the EU Age Verification Trusted List's `recognized`
   (others are skipped, with a log line). The list's own
   signature is not verified, and neither is its signer. The signer's certificate and the
-  certificates of past service versions are not anchors. Add `etsi_xml_sha256` (the SHA-256
-  of the file you reviewed, in hex) to refuse any other content; without it the service logs
-  an `etsi_xml_not_pinned` warning that shows the digest to pin.
+  certificates of past service versions are not anchors. To use a fixed list you have
+  reviewed, point `etsi_xml` at a local copy.
 
 Every listed anchor is authorized to vouch for age credentials. Sources that resolve to
 zero anchors fail startup.

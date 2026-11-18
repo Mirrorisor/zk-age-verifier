@@ -13,7 +13,6 @@ trusted by its pinned path or URL, not by a checked list signature.
 """
 
 import base64
-import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -241,7 +240,7 @@ def load_anchors(sources: list[TrustSource]) -> AnchorSet:
         if source.pem is not None:
             anchors.extend(_load_pem(source.pem))
         else:
-            anchors.extend(_load_etsi_xml(cast(str, source.etsi_xml), source.etsi_xml_sha256))
+            anchors.extend(_load_etsi_xml(cast(str, source.etsi_xml)))
     if not anchors:
         raise ConfigError("trust sources resolved to no anchors; check the [trust] source paths")
     return AnchorSet(tuple(anchors))
@@ -266,17 +265,16 @@ def _load_pem(location: str) -> list[x509.Certificate]:
 _ACTIVE_SERVICE_STATUSES = frozenset({"granted", "recognisedatnationallevel", "recognized"})
 
 
-def _load_etsi_xml(location: str, pinned_sha256: str | None = None) -> list[x509.Certificate]:
+def _load_etsi_xml(location: str) -> list[x509.Certificate]:
     """Fetch and parse an ETSI list from a path or URL, extracting its service certificates.
 
-    The list's own signature is not verified. Pin the file's SHA-256 with
-    ``pinned_sha256`` to make sure it is the file the operator reviewed.
+    The list's own signature is not verified. An operator who wants a fixed, reviewed
+    list points ``etsi_xml`` at a local copy.
 
     Raises:
         ConfigError: The location is an ``http`` URL. A trust list fetched
             over plain http can be replaced in transit, so only ``https``
-            URLs and local file paths are accepted. Also raised when
-            ``pinned_sha256`` is given and the list's SHA-256 differs.
+            URLs and local file paths are accepted.
     """
     scheme = urlsplit(location).scheme
     if scheme == "http":
@@ -288,13 +286,6 @@ def _load_etsi_xml(location: str, pinned_sha256: str | None = None) -> list[x509
             data = response.read()
     else:
         data = Path(location).read_bytes()
-    digest = hashlib.sha256(data).hexdigest()
-    if pinned_sha256 is None:
-        log.warning("etsi_xml_not_pinned", location=location, sha256=digest)
-    elif digest != pinned_sha256.lower():
-        raise ConfigError(
-            f"trust list {location} has SHA-256 {digest}, not the pinned {pinned_sha256.lower()}"
-        )
     root = ElementTree.fromstring(data)
     anchors: list[x509.Certificate] = []
     # Only the certificates a service is listed under are anchors. The list's

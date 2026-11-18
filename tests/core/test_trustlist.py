@@ -1,5 +1,4 @@
 import base64
-import hashlib
 from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 
@@ -444,35 +443,6 @@ def test_the_age_verification_lists_recognized_status_counts_as_active(tmp_path:
     listing = tmp_path / "tsl.xml"
     listing.write_bytes(_etsi_xml(anchor, status="recognized"))
     assert load_anchors([TrustSource(etsi_xml=str(listing))]).resolve(anchor)
-
-
-def test_unpinned_etsi_list_logs_its_digest(tmp_path: Path) -> None:
-    listing = tmp_path / "tsl.xml"
-    data = _etsi_xml(_self_signed())
-    listing.write_bytes(data)
-    with capture_logs() as logs:
-        load_anchors([TrustSource(etsi_xml=str(listing))])
-    (event,) = [entry for entry in logs if entry["event"] == "etsi_xml_not_pinned"]
-    assert event["sha256"] == hashlib.sha256(data).hexdigest()
-
-
-def test_pinned_etsi_list_with_matching_digest_loads_silently(tmp_path: Path) -> None:
-    anchor = _self_signed()
-    listing = tmp_path / "tsl.xml"
-    data = _etsi_xml(anchor)
-    listing.write_bytes(data)
-    pin = hashlib.sha256(data).hexdigest().upper()  # hex case does not matter
-    with capture_logs() as logs:
-        anchors = load_anchors([TrustSource(etsi_xml=str(listing), etsi_xml_sha256=pin)])
-    assert anchors.resolve(anchor)
-    assert not [entry for entry in logs if entry["event"] == "etsi_xml_not_pinned"]
-
-
-def test_pinned_etsi_list_with_a_different_digest_is_refused(tmp_path: Path) -> None:
-    listing = tmp_path / "tsl.xml"
-    listing.write_bytes(_etsi_xml(_self_signed()))
-    with pytest.raises(ConfigError, match="not the pinned"):
-        load_anchors([TrustSource(etsi_xml=str(listing), etsi_xml_sha256="0" * 64)])
 
 
 def test_etsi_xml_without_service_certificates_rejected(tmp_path: Path) -> None:

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- An `etsi_xml` trust source now takes only certificates listed under a service's `ServiceDigitalIdentity` (not the list's own signer, pointers to other lists, or past service versions), and skips services whose status is not active: `granted` or `recognisedatnationallevel` (ETSI TS 119 612) or `recognized` (the EU Age Verification Trusted List). A new optional `etsi_xml_sha256` refuses a list with different content; without it the service logs `etsi_xml_not_pinned` with the digest. The list's own signature is still not verified ([#76](https://github.com/pipe23-org/zk-age-verifier/issues/76)).
+- An `etsi_xml` trust source now takes only certificates listed under a service's `ServiceDigitalIdentity` (not the list's own signer, pointers to other lists, or past service versions), and skips services whose status is not active: `granted` or `recognisedatnationallevel` (ETSI TS 119 612) or `recognized` (the EU Age Verification Trusted List). The list's own signature is still not verified (#78).
 
 ## 0.5.0 - 2026-11-15
 
