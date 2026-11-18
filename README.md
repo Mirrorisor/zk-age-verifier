@@ -106,7 +106,10 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
   certificates of past service versions are not anchors. To use a fixed list you have
   reviewed, point `etsi_xml` at a local copy. A list whose own `NextUpdate` time has passed
   is refused, so fetch a current copy; a list with no usable `NextUpdate` loads with an
-  `etsi_xml_no_next_update` warning.
+  `etsi_xml_no_next_update` warning. Add `etsi_xml_signer` (a PEM file holding the
+  certificate that signs the list) to require the list's XML signature: it must verify
+  against exactly that certificate, the anchors are then read only from the signed
+  content, and a missing, wrong or broken signature stops startup.
 
 Every listed anchor is authorized to vouch for age credentials. Sources that resolve to
 zero anchors fail startup.

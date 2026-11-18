@@ -97,10 +97,16 @@ class TrustSource(BaseModel):
 
     pem: str | None = None
     etsi_xml: str | None = None
+    # PEM file holding the certificate that signs the list. When set, the list's XML
+    # signature must verify against exactly this certificate, and only the signed content
+    # is read.
+    etsi_xml_signer: str | None = None
 
     @model_validator(mode="after")
     def _validate_single_source(self) -> "TrustSource":
-        """Reject entries that set zero or several source keys."""
+        """Reject entries that set zero or several source keys, or a signer without a list."""
+        if self.etsi_xml_signer is not None and self.etsi_xml is None:
+            raise ValueError("etsi_xml_signer can only be used together with etsi_xml")
         set_keys = [
             key
             for key, value in (("pem", self.pem), ("etsi_xml", self.etsi_xml))
