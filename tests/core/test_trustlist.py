@@ -421,12 +421,44 @@ def test_etsi_xml_url_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         def __exit__(self, *_: object) -> None:
             return None
 
-        def read(self) -> bytes:
-            return xml
+        def read(self, limit: int) -> bytes:
+            return xml[:limit]
 
-    monkeypatch.setattr(trustlist, "urlopen", lambda _url: _Response())
+    def fake_urlopen(url: str, timeout: float) -> _Response:
+        assert timeout == trustlist._FETCH_TIMEOUT_SECONDS
+        return _Response()
+
+    monkeypatch.setattr(trustlist, "urlopen", fake_urlopen)
     anchors = load_anchors([TrustSource(etsi_xml="https://tsl.example.org/list.xml")])
     assert anchors.resolve(anchor)
+
+
+def test_etsi_xml_url_that_cannot_be_fetched_is_a_config_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def stalled(url: str, timeout: float) -> object:
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(trustlist, "urlopen", stalled)
+    with pytest.raises(ConfigError, match="cannot fetch trust list"):
+        load_anchors([TrustSource(etsi_xml="https://tsl.example.org/list.xml")])
+
+
+def test_etsi_xml_url_larger_than_the_limit_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Huge:
+        def __enter__(self) -> "_Huge":
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def read(self, limit: int) -> bytes:
+            return b"x" * limit
+
+    monkeypatch.setattr(trustlist, "urlopen", lambda url, timeout: _Huge())
+    monkeypatch.setattr(trustlist, "_MAX_LIST_BYTES", 10)
+    with pytest.raises(ConfigError, match="larger than 10 bytes"):
+        load_anchors([TrustSource(etsi_xml="https://tsl.example.org/list.xml")])
 
 
 def test_etsi_xml_ignores_signer_and_history_certificates(tmp_path: Path) -> None:

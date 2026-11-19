@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- An `https` trust list is fetched with a 30-second timeout and refused above 16 MiB; a list that cannot be fetched now stops startup with a configuration error instead of a traceback.
 - An `etsi_xml` trust source takes an optional `etsi_xml_signers`: a PEM file or directory of the certificates authorised to sign the list. The list's XML signature must verify against one of them, and anchors are read only from the signed content. Without it, `etsi_xml_signature_not_checked` is logged (#91).
 - **BACKWARDS INCOMPATIBLE:** An `etsi_xml` list whose `NextUpdate` has passed is refused at startup; a list without a `NextUpdate` loads with an `etsi_xml_no_next_update` warning (#91).
 - New dependency: `signxml`, for the XML signature check (#91).
