@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- An `etsi_xml` trust source now takes certificates only from services of the age-attestation type, `http://trust.tech.ec.europa.eu/lists/age-verification/service-type/paa`; services of any other type, or with no type, are skipped, and the `etsi_service_skipped` log line names the service type (#82).
 - An `etsi_xml` trust source now takes as anchors only the certificates in the `ServiceDigitalIdentity` of services with status `granted`, `recognisedatnationallevel` or `recognized`, where it took every certificate in the file (#78).
 
 ## 0.5.0 - 2026-11-15
