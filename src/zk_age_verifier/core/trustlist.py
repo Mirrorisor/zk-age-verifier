@@ -51,7 +51,8 @@ class AnchorSet:
 
         The certificate is accepted if it is itself an anchor (SHA-256
         fingerprint match) or was directly issued by one, and is within its own
-        validity window in either case. A presented certificate must carry a
+        validity window in either case. An anchor accepted as the issuer must be
+        within its validity window too. A presented certificate must carry a
         keyUsage extension asserting digitalSignature; an anchor accepted as the
         issuer of a chained leaf must assert keyCertSign.
 
@@ -89,6 +90,9 @@ class AnchorSet:
         if any(fingerprint == anchor.fingerprint(hashes.SHA256()) for anchor in self.anchors):
             return True
         for anchor in self.anchors:
+            # An expired (or not yet valid) root vouches for nothing it issued.
+            if not (anchor.not_valid_before_utc <= now <= anchor.not_valid_after_utc):
+                continue
             if not _key_usage_permits(anchor, "key_cert_sign"):
                 continue
             try:

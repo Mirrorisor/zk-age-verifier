@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- An anchor that is outside its own validity window no longer vouches for the certificates it issued; until now only the presented certificate's dates were checked.
 - An `etsi_xml` trust source now takes as anchors only the certificates in the `ServiceDigitalIdentity` of services with status `granted`, `recognisedatnationallevel` or `recognized`, where it took every certificate in the file (#78).
 
 ## 0.5.0 - 2026-11-15
