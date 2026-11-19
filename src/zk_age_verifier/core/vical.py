@@ -29,6 +29,9 @@ from zk_age_verifier.config import ConfigError
 log = structlog.get_logger()
 
 _COSE_SIGN1_TAG = 18
+# Extended key usage of a VICAL signer certificate (ISO/IEC 18013-5, "mDL VICAL"; listed as
+# ISO_18013_5_MDL_VICAL in Multipaz's OID table and required by MATTR's Digital Trust Service).
+_VICAL_SIGNER_EKU = x509.ObjectIdentifier("1.0.18013.5.1.8")
 _HEADER_ALG = 1
 _HEADER_X5CHAIN = 33
 # COSE algorithm identifiers (RFC 9053) for ECDSA, the only kind ISO 18013-5 allows,
@@ -140,7 +143,12 @@ def _signer(x5chain: object, location: str) -> x509.Certificate:
 
 
 def _check_signer(signer: x509.Certificate, trusted: x509.Certificate, location: str) -> None:
-    """Require the signer to be ``trusted`` or issued by it, and valid now."""
+    """Require the signer to be ``trusted`` or issued by it, and valid now.
+
+    A signer issued by ``trusted`` must also carry the VICAL signer extended key usage, so
+    that no other certificate from the same root can sign a VICAL. A signer the operator
+    configured directly is trusted as it is.
+    """
     now = datetime.now(UTC)
     if not signer.not_valid_before_utc <= now <= signer.not_valid_after_utc:
         raise ConfigError(f"VICAL {location} signer certificate is not valid today")
@@ -153,6 +161,15 @@ def _check_signer(signer: x509.Certificate, trusted: x509.Certificate, location:
             f"VICAL {location} is signed by {signer.subject.rfc4514_string()}, "
             "which is neither the configured vical_signer nor issued by it"
         ) from exc
+    try:
+        usages = signer.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
+    except x509.ExtensionNotFound:
+        usages = None
+    if usages is None or _VICAL_SIGNER_EKU not in usages:
+        raise ConfigError(
+            f"VICAL {location} signer {signer.subject.rfc4514_string()} is not marked as a "
+            f"VICAL signer (extended key usage {_VICAL_SIGNER_EKU.dotted_string})"
+        )
 
 
 def _check_signature(

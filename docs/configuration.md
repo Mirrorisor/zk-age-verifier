@@ -75,7 +75,8 @@ or `vical`:
   - `vical_signer` — a PEM file holding the VICAL signer's certificate, or the certificate
     that issued it (the provider's VICAL root). The list's COSE signature must come from the
     certificate in its `x5chain` header, and that certificate must be this one or be issued
-    directly by it, and be valid today. ES256, ES384 and ES512 are accepted, each only with
+    directly by it (then marked with the VICAL signer extended key usage `1.0.18013.5.1.8`),
+    and be valid today. ES256, ES384 and ES512 are accepted, each only with
     its own curve (P-256, P-384, P-521).
   - `vical_doc_types` — the document types whose issuers to trust, for example
     `["org.iso.18013.5.1.mDL"]`. An issuer listed only for other types is not loaded.

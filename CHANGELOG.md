@@ -2,6 +2,7 @@
 
 ## Unreleased (fork)
 
+- Fork only: a VICAL signer issued by the configured `vical_signer` must carry the VICAL signer extended key usage (`1.0.18013.5.1.8`), so no other certificate from the same root can sign a VICAL. A signer configured directly is trusted as it is.
 - Fork only: a `vical` trust source loads issuer root certificates (IACAs) from a VICAL, the signed issuer list of ISO/IEC 18013-5 Annex C that mobile driving licence programmes publish (AAMVA today; Austroads is preparing one for Australia). The COSE_Sign1 signature must come from the certificate in `vical_signer` or one it issued directly, the list must not be past its `nextUpdate` or `notAfter`, and only issuers listed for `vical_doc_types` (and, if set, `vical_countries`) load.
 - Fork only: a VICAL whose header names an algorithm for another curve than the signer key's is refused; listed issuer certificates that are not valid today are skipped (`vical_certificate_not_valid_now`), and a VICAL without `nextUpdate` logs `vical_no_next_update`.
 - Fork only: merged upstream 0.5.0 (pylongfellow 0.8.0, `log_level`, the real EU Age Verification Trusted Lists as test data). The `untrusted_issuer` event is now logged at debug level, as upstream; set `log_level = "debug"` to see it. The fork still adds the refused certificate as `der_base64`.

@@ -20,6 +20,7 @@ from zk_age_verifier.core.trustlist import load_anchors
 from zk_age_verifier.core.vical import load_vical
 
 MDL = "org.iso.18013.5.1.mDL"
+VICAL_SIGNER_EKU = x509.ObjectIdentifier("1.0.18013.5.1.8")
 EU_AV = "eu.europa.ec.av.1"
 # A byte string that promises five bytes and has two: not valid CBOR.
 TRUNCATED = b"\x45ab"
@@ -32,7 +33,7 @@ class _Provider:
         self.ca_key = ec.generate_private_key(ec.SECP256R1())
         self.ca = _cert(self.ca_key, "vical-ca", "vical-ca", self.ca_key, ca=True)
         self.key = ec.generate_private_key(curve or ec.SECP256R1())
-        self.signer = _cert(self.key, "vical-signer", "vical-ca", self.ca_key)
+        self.signer = _signer_cert(self.key, self.ca_key)
 
     def sign(
         self,
@@ -68,6 +69,27 @@ class _Provider:
         size = (self.key.curve.key_size + 7) // 8
         message = [protected, unprotected, payload, r.to_bytes(size) + s.to_bytes(size)]
         return cbor2.dumps(cbor2.CBORTag(18, message) if tagged else message)
+
+
+def _signer_cert(
+    key: ec.EllipticCurvePrivateKey,
+    ca_key: ec.EllipticCurvePrivateKey,
+    usages: list[x509.ObjectIdentifier] | None = None,
+) -> x509.Certificate:
+    """A VICAL signer issued by ``ca_key``, with the VICAL signer EKU unless ``usages`` says."""
+    builder = (
+        x509.CertificateBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "vical-signer")]))
+        .issuer_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "vical-ca")]))
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(NOW - timedelta(days=1))
+        .not_valid_after(NOW + timedelta(days=365))
+    )
+    chosen = [VICAL_SIGNER_EKU] if usages is None else usages
+    if chosen:
+        builder = builder.add_extension(x509.ExtendedKeyUsage(chosen), critical=True)
+    return builder.sign(ca_key, hashes.SHA256())
 
 
 def _entry(
@@ -377,3 +399,21 @@ def test_a_listed_issuer_outside_its_validity_is_skipped_with_a_warning() -> Non
     assert anchors == [current]
     (event,) = [entry for entry in logs if entry["event"] == "vical_certificate_not_valid_now"]
     assert event["issuing_authority"] == "Test road authority"
+
+
+@pytest.mark.parametrize("usages", [[], [x509.ObjectIdentifier("1.0.18013.5.1.2")]])
+def test_a_signer_from_the_root_without_the_vical_signer_eku_is_refused(
+    usages: list[x509.ObjectIdentifier],
+) -> None:
+    # No EKU at all, or the document signer EKU: another certificate from the same root.
+    provider = _Provider()
+    provider.signer = _signer_cert(provider.key, provider.ca_key, usages)
+    with pytest.raises(ConfigError, match=r"not marked as a VICAL signer \(extended key usage"):
+        _load(provider.sign(_content([_entry(_self_signed())])), provider.ca)
+
+
+def test_a_signer_configured_directly_needs_no_eku() -> None:
+    provider = _Provider()
+    provider.signer = _signer_cert(provider.key, provider.ca_key, [])
+    root = _self_signed()
+    assert _load(provider.sign(_content([_entry(root)])), provider.signer) == [root]
