@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- An `https` trust list is fetched with a 30-second timeout and refused above 16 MiB; a list that cannot be fetched now stops startup with a configuration error instead of a traceback.
 - An `etsi_xml` trust source now takes as anchors only the certificates in the `ServiceDigitalIdentity` of services with status `granted`, `recognisedatnationallevel` or `recognized`, where it took every certificate in the file (#78).
 
 ## 0.5.0 - 2026-11-15

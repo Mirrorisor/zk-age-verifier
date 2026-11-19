@@ -264,6 +264,11 @@ def _load_pem(location: str) -> list[x509.Certificate]:
 # (http://trust.tech.ec.europa.eu/lists/age-verification/service-status/recognized).
 _ACTIVE_SERVICE_STATUSES = frozenset({"granted", "recognisedatnationallevel", "recognized"})
 
+# A list is fetched once at startup. A server that stalls, or sends far more than any real
+# list, must not hang or bloat the service.
+_FETCH_TIMEOUT_SECONDS = 30
+_MAX_LIST_BYTES = 16 * 1024 * 1024
+
 
 def _load_etsi_xml(location: str) -> list[x509.Certificate]:
     """Fetch and parse an ETSI list from a path or URL, extracting its service certificates.
@@ -274,7 +279,8 @@ def _load_etsi_xml(location: str) -> list[x509.Certificate]:
     Raises:
         ConfigError: The location is an ``http`` URL. A trust list fetched
             over plain http can be replaced in transit, so only ``https``
-            URLs and local file paths are accepted.
+            URLs and local file paths are accepted. Also raised when an ``https``
+            list cannot be fetched within the timeout or is larger than 16 MiB.
     """
     scheme = urlsplit(location).scheme
     if scheme == "http":
@@ -282,8 +288,14 @@ def _load_etsi_xml(location: str) -> list[x509.Certificate]:
             f"trust source url uses scheme {scheme!r}; https or a file path is required"
         )
     if scheme == "https":
-        with urlopen(location) as response:  # noqa: S310 - operator-configured startup fetch
-            data = response.read()
+        try:
+            # Operator-configured startup fetch, so S310 (URL scheme audit) does not apply.
+            with urlopen(location, timeout=_FETCH_TIMEOUT_SECONDS) as response:  # noqa: S310
+                data = response.read(_MAX_LIST_BYTES + 1)
+        except OSError as exc:  # URLError, HTTPError and timeouts are all OSErrors
+            raise ConfigError(f"cannot fetch trust list {location}: {exc}") from exc
+        if len(data) > _MAX_LIST_BYTES:
+            raise ConfigError(f"trust list {location} is larger than {_MAX_LIST_BYTES} bytes")
     else:
         data = Path(location).read_bytes()
     root = ElementTree.fromstring(data)
