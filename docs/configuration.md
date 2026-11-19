@@ -42,7 +42,8 @@ or `vical`:
 - `pem` — a PEM file, or a directory whose `*.pem` files are all loaded.
 - `etsi_xml` — an ETSI trusted list, path or URL; the certificates listed in each service's
   `ServiceDigitalIdentity` become anchors, but only for services whose status is `granted`
-  or `recognisedatnationallevel` (others are skipped, with a log line). The signer's
+  or `recognisedatnationallevel` (ETSI TS 119 612) or `recognized` (EU Age Verification
+  Trusted List); others are skipped, with a log line. The signer's
   certificate and the certificates of past service versions are not anchors. Protect the
   list in either or both of two ways:
   - `etsi_xml_signer` — a PEM file holding the certificate that signs the list. The list's

@@ -20,6 +20,10 @@
 - Fork only: an `etsi_xml` trust source now takes only certificates listed under a service's `ServiceDigitalIdentity`. Before, every certificate in the file became an anchor, including the list's own signer and past service versions. The list's signature is still not verified ([#76](https://github.com/pipe23-org/zk-age-verifier/issues/76)).
 - Fork only: `test_real_document_signer_resolves_through_real_anchor` pins the clock, because the real document-signer test certificate expired on 2026-09-24. Added a fork notice to the README.
 
+## Unreleased
+
+- An `etsi_xml` trust source now takes as anchors only the certificates in the `ServiceDigitalIdentity` of services with status `granted`, `recognisedatnationallevel` or `recognized`, where it took every certificate in the file (#78).
+
 ## 0.5.0 - 2026-11-15
 
 - Bumped pylongfellow from 0.5.2 to 0.8.0 (#84).
