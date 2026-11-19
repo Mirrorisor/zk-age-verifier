@@ -1,0 +1,45 @@
+name: Audit
+
+# Fork only: known vulnerabilities in what the service actually runs. The locked runtime
+# dependencies are checked with pip-audit, and the built image (operating-system packages
+# and anything else installed in it) with Trivy. Weekly, so a new advisory for a pinned
+# package shows up without a push. Fixes go through docs in age-gate's VERIFIER-MAINTENANCE.md.
+
+on:
+  push:
+    branches: [main, audit]
+  pull_request:
+  schedule:
+    - cron: "41 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependencies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+      - name: Audit the locked runtime dependencies
+        run: |
+          uv export --frozen --no-hashes --no-dev --no-emit-project > "$RUNNER_TEMP/requirements.txt"
+          uvx pip-audit --no-deps --disable-pip -r "$RUNNER_TEMP/requirements.txt"
+
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the image
+        run: docker build --quiet --tag local/verifier .
+      - name: Scan the image (fails on a fixable high or critical finding)
+        run: >
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
+          aquasec/trivy:latest image --quiet --scanners vuln --severity HIGH,CRITICAL
+          --ignore-unfixed --exit-code 1 local/verifier
+      - name: Trivy image digest
+        if: always()
+        run: docker inspect --format '{{index .RepoDigests 0}}' aquasec/trivy:latest

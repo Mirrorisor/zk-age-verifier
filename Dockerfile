@@ -13,7 +13,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 RUN chmod +x /app/docker-entrypoint.sh
 
-FROM python:3.11-slim-bookworm
+# Fork: pinned by digest (python 3.11.18, 2026-11-05), and pip, setuptools and wheel are removed:
+# the service runs from /app/.venv and never installs anything, and their vendored packages
+# carried known vulnerabilities (jaraco.context, wheel). The audit workflow scans this image.
+FROM python:3.11-slim-bookworm@sha256:a83ba18aef0f865b1a4a611c2cf460fe446f2795673bbb9fe43be570439e3b39
+RUN python -m pip uninstall --yes --quiet pip setuptools wheel
 ARG GIT_REF=""
 ENV ZK_AGE_VERIFIER_BUILD_REF=$GIT_REF
 RUN useradd --create-home app
