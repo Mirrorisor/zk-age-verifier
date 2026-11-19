@@ -11,11 +11,13 @@ and unstable.
 > [pipe23-org/zk-age-verifier](https://github.com/pipe23-org/zk-age-verifier)
 > (Apache-2.0, copyright Nathan Schepers), kept so that
 > [Mirrorisor/age-gate](https://github.com/Mirrorisor/age-gate) can run a version it controls.
-> Changes from upstream: an `untrusted_issuer` log line naming the refused certificate
-> ([upstream issue #76](https://github.com/pipe23-org/zk-age-verifier/issues/76)), and a
-> test that pins the clock so the expired real test certificate no longer fails CI, and an
-> `etsi_xml` trust source that takes only active service certificates (not the list's signer)
-> and can be pinned to a reviewed file's SHA-256.
+> Upstream has since taken the refused-certificate log line (#77, in 0.5.0) and the
+> active-service trust-list loader (#78); this fork is merged with both. Still fork-only:
+> the refused certificate as `der_base64` and `--check-cert`; `etsi_xml_signer` (signed
+> lists), `NextUpdate` checks, `etsi_lotl` (the EU list of trusted lists) and
+> `etsi_xml_sha256`; `vical` issuer lists (ISO/IEC 18013-5 Annex C); several credential kinds
+> in one service with the holder choosing (`eu-av`, `iso-mdl`, `photo-id`, `google-id-pass`);
+> and a test that pins the clock for the expired real test certificate.
 > Everything else is upstream's work. Security fixes upstream must be merged here by hand.
 
 [![CI](https://github.com/pipe23-org/zk-age-verifier/actions/workflows/ci.yml/badge.svg)](https://github.com/pipe23-org/zk-age-verifier/actions/workflows/ci.yml)
