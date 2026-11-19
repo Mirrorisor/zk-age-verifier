@@ -34,7 +34,7 @@ from signxml.exceptions import SignXMLException
 from signxml.verifier import SignatureConfiguration, XMLVerifier
 
 from zk_age_verifier.config import ConfigError, TrustSource
-from zk_age_verifier.core.vical import load_vical
+from zk_age_verifier.core.vical import describe_vical, load_vical
 
 log = structlog.get_logger(__name__)
 
@@ -474,6 +474,15 @@ def _signature_reference_count(data: bytes, location: str) -> int:
     if count > _MAX_SIGNATURE_REFERENCES:
         raise ConfigError(f"trust list {location} signature has {count} references; refusing")
     return max(count, 1)
+
+
+def check_vical(location: str, signer_path: str) -> tuple[bool, list[str]]:
+    """Fetch a VICAL and describe it against a signer certificate (``--check-vical``).
+
+    Raises:
+        ConfigError: The VICAL or the signer certificate cannot be read.
+    """
+    return describe_vical(_fetch(location), _read_signer(signer_path), location)
 
 
 def _read_signer(signer_path: str) -> x509.Certificate:

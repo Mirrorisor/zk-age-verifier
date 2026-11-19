@@ -15,8 +15,9 @@ and unstable.
 > active-service trust-list loader (#78); this fork is merged with both. Still fork-only:
 > the refused certificate as `der_base64` and `--check-cert`; `etsi_xml_signer` (signed
 > lists), `NextUpdate` checks, `etsi_lotl` (the EU list of trusted lists) and
-> `etsi_xml_sha256`; `vical` issuer lists (ISO/IEC 18013-5 Annex C); several credential kinds
-> in one service with the holder choosing (`eu-av`, `iso-mdl`, `photo-id`, `google-id-pass`);
+> `etsi_xml_sha256`; `vical` issuer lists (ISO/IEC 18013-5 Annex C) and `--check-vical`;
+> several credential kinds in one service with the holder choosing (`eu-av`, `iso-mdl`,
+> `photo-id`, `google-id-pass`);
 > and a test that pins the clock for the expired real test certificate.
 > Everything else is upstream's work. Security fixes upstream must be merged here by hand.
 
@@ -193,6 +194,24 @@ It prints the certificate's name, issuer and SHA-256 fingerprint, then each chec
 or which anchor signed it and whether that anchor may sign certificates) and ends with
 `verdict: TRUSTED` or `verdict: NOT TRUSTED`. It never starts the service. The exit status is
 0 if trusted, 1 if not, and 2 if the configuration or the file could not be read.
+
+### Checking a VICAL before trusting it
+
+Before adding a `vical` trust source, look at the list itself:
+
+```
+zk-age-verifier --check-vical vical.cbor --vical-signer vical-root.pem
+```
+
+`--check-vical` takes a path or an https URL, and `--vical-signer` the certificate you would
+put in `vical_signer`. No configuration file is needed. It prints the signer's name, validity
+and SHA-256 fingerprint, whether the signer is that certificate or a VICAL signer it issued,
+whether the signature verifies, the provider, issue number and date, the `nextUpdate` and
+`notAfter` dates, and then every listed issuer with its country, authority, document types,
+certificate name and expiry (marked `NOT VALID TODAY` when it is not). Nothing is filtered by
+document type or country here. It ends with `TRUSTED` or `NOT TRUSTED`; if the signature
+does not check out, nothing from the list is shown. The exit status is 0 if trusted, 1 if
+not, and 2 if the list or the signer file could not be read.
 
 See [docs/troubleshooting.md](docs/troubleshooting.md) for what each log line means and how to
 read the `--check-cert` result, and [docs/compatibility.md](docs/compatibility.md) for which

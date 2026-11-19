@@ -17,7 +17,7 @@ from structlog.testing import capture_logs
 from tests.core.test_trustlist import NOW, _cert, _self_signed
 from zk_age_verifier.config import ConfigError, TrustSource
 from zk_age_verifier.core.trustlist import load_anchors
-from zk_age_verifier.core.vical import load_vical
+from zk_age_verifier.core.vical import describe_vical, load_vical
 
 MDL = "org.iso.18013.5.1.mDL"
 VICAL_SIGNER_EKU = x509.ObjectIdentifier("1.0.18013.5.1.8")
@@ -417,3 +417,86 @@ def test_a_signer_configured_directly_needs_no_eku() -> None:
     provider.signer = _signer_cert(provider.key, provider.ca_key, [])
     root = _self_signed()
     assert _load(provider.sign(_content([_entry(root)])), provider.signer) == [root]
+
+
+def _describe(data: bytes, trusted: x509.Certificate) -> tuple[bool, str]:
+    trusted_now, lines = describe_vical(data, trusted, "test-vical")
+    return trusted_now, "\n".join(lines)
+
+
+def test_describe_lists_every_issuer_of_a_good_vical() -> None:
+    provider = _Provider()
+    licence, age = _self_signed("licence-root"), _self_signed("age-root")
+    expired = _self_signed("expired-root", NOW - timedelta(hours=1))
+    entries: list[Any] = [_entry(licence), _entry(age, doc_types=(EU_AV,), country=None)]
+    entries.append(_entry(expired))
+    entries.append({"certificate": b"not der", "docType": [MDL]})
+    entries.append(_entry(_self_signed("untyped-root"), doc_types=None))
+    entries.append("not a map")
+    ok, report = _describe(
+        provider.sign(_content(entries, notAfter=NOW + timedelta(days=60))), provider.ca
+    )
+    assert ok
+    assert report.endswith("\nTRUSTED")
+    assert "[ok] signer is the configured certificate" in report
+    assert "[ok] signature verifies" in report
+    assert "provider: Test provider, issue 7" in report
+    assert "[ok] nextUpdate" in report and "[ok] notAfter" in report
+    assert "issuers: 6" in report
+    assert "AU Test road authority: None; CN=untyped-root" in report
+    assert f"AU Test road authority: {MDL}; CN=licence-root" in report
+    assert f"?? Test road authority: {EU_AV}; CN=age-root" in report
+    assert "CN=expired-root" in report and "(NOT VALID TODAY)" in report
+    assert f"- ??: {MDL}; certificate unreadable" in report
+    assert "- (not a map)" in report
+
+
+def test_describe_shows_the_signer_and_fails_one_from_elsewhere() -> None:
+    provider = _Provider()
+    ok, report = _describe(provider.sign(_content([_entry(_self_signed())])), _Provider().ca)
+    assert not ok
+    assert "signer: CN=vical-signer" in report
+    assert provider.signer.fingerprint(hashes.SHA256()).hex() in report
+    assert "[FAIL]" in report and report.endswith("\nNOT TRUSTED")
+    assert "provider:" not in report  # nothing from an unverified list is shown
+
+
+def test_describe_fails_a_broken_signature() -> None:
+    provider = _Provider()
+    data = provider.sign(_content([_entry(_self_signed())]), signed_payload=b"other")
+    ok, report = _describe(data, provider.ca)
+    assert not ok
+    assert "[ok] signer is" in report
+    assert "[ok] signature verifies" not in report
+
+
+def test_describe_fails_a_file_that_is_not_a_vical() -> None:
+    ok, report = _describe(TRUNCATED, _Provider().ca)
+    assert not ok
+    assert "signer:" not in report and report.endswith("\nNOT TRUSTED")
+
+
+@pytest.mark.parametrize("field", ["nextUpdate", "notAfter"])
+def test_describe_fails_a_list_past_its_dates(field: str) -> None:
+    provider = _Provider()
+    content = _content([_entry(_self_signed())], **{field: NOW - timedelta(seconds=1)})
+    ok, report = _describe(provider.sign(content), provider.ca)
+    assert not ok
+    assert f"[FAIL] {field}" in report and "has passed" in report
+    assert "issuers: 1" in report  # the issuers are still listed
+
+
+def test_describe_fails_a_date_that_is_not_a_date_and_notes_no_next_update() -> None:
+    provider = _Provider()
+    content = _content([_entry(_self_signed())], nextUpdate=None, notAfter="soon")
+    ok, report = _describe(provider.sign(content), provider.ca)
+    assert not ok
+    assert "[note] no nextUpdate" in report
+    assert "[FAIL] VICAL test-vical" in report
+
+
+def test_describe_fails_a_list_without_certificate_infos() -> None:
+    provider = _Provider()
+    ok, report = _describe(provider.sign(_content([], certificateInfos=None)), provider.ca)
+    assert not ok
+    assert "[FAIL] no certificateInfos list" in report

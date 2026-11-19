@@ -111,6 +111,24 @@ or which anchor signed it and whether that anchor may sign certificates) and end
 `verdict: TRUSTED` or `verdict: NOT TRUSTED`. It never starts the service. The exit status is
 0 if trusted, 1 if not, and 2 if the configuration or the file could not be read.
 
+### Checking a VICAL before trusting it
+
+Before adding a `vical` trust source, look at the list itself:
+
+```
+zk-age-verifier --check-vical vical.cbor --vical-signer vical-root.pem
+```
+
+`--check-vical` takes a path or an https URL, and `--vical-signer` the certificate you would
+put in `vical_signer`. No configuration file is needed. It prints the signer's name, validity
+and SHA-256 fingerprint, whether the signer is that certificate or a VICAL signer it issued,
+whether the signature verifies, the provider, issue number and date, the `nextUpdate` and
+`notAfter` dates, and then every listed issuer with its country, authority, document types,
+certificate name and expiry (marked `NOT VALID TODAY` when it is not). Nothing is filtered by
+document type or country here. It ends with `TRUSTED` or `NOT TRUSTED`; if the signature
+does not check out, nothing from the list is shown. The exit status is 0 if trusted, 1 if
+not, and 2 if the list or the signer file could not be read.
+
 ## Environment variables
 
 `ZK_AGE_VERIFIER_SECTION__KEY` overrides a scalar value: `ZK_AGE_VERIFIER_` is the prefix

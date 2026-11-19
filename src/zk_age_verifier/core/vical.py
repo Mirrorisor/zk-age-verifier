@@ -13,6 +13,7 @@ today, become anchors. The algorithm in the header must match the signer key's c
 """
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -65,15 +66,10 @@ def load_vical(
             ``trusted`` or issued by it, the signature does not verify, the list is
             past its ``nextUpdate`` or ``notAfter``, or no issuer matches.
     """
-    protected, unprotected, payload, signature = _sign1_parts(data, location)
-    header = _decode_map(protected, "protected header", location) if protected else {}
-    alg = header.get(_HEADER_ALG)
-    algorithm = _ALGORITHMS.get(alg) if isinstance(alg, int) else None
-    if algorithm is None:
-        raise ConfigError(f"VICAL {location} is not signed with ES256, ES384 or ES512")
-    signer = _signer(header.get(_HEADER_X5CHAIN, unprotected.get(_HEADER_X5CHAIN)), location)
-    _check_signer(signer, trusted, location)
-    _check_signature(signer, algorithm, protected, payload, signature, location)
+    message = _Signed.read(data, location)
+    _check_signer(message.signer, trusted, location)
+    message.verify(location)
+    signer, payload = message.signer, message.payload
     content = _decode_map(payload, "content", location)
     for field in ("nextUpdate", "notAfter"):
         if field in content and _instant(content[field], field, location) <= datetime.now(UTC):
@@ -92,6 +88,44 @@ def load_vical(
         signer_sha256=signer.fingerprint(hashes.SHA256()).hex(),
     )
     return anchors
+
+
+@dataclass(frozen=True)
+class _Signed:
+    """A COSE_Sign1 VICAL split into what the checks need, before any is made."""
+
+    signer: x509.Certificate
+    algorithm: tuple[type[hashes.HashAlgorithm], type[ec.EllipticCurve]]
+    protected: bytes
+    payload: bytes
+    signature: bytes
+
+    @classmethod
+    def read(cls, data: bytes, location: str) -> "_Signed":
+        """Split ``data`` and find its algorithm and signer certificate.
+
+        Raises:
+            ConfigError: It is not a COSE_Sign1 message, names no ECDSA algorithm, or
+                carries no readable signer certificate.
+        """
+        protected, unprotected, payload, signature = _sign1_parts(data, location)
+        header = _decode_map(protected, "protected header", location) if protected else {}
+        alg = header.get(_HEADER_ALG)
+        algorithm = _ALGORITHMS.get(alg) if isinstance(alg, int) else None
+        if algorithm is None:
+            raise ConfigError(f"VICAL {location} is not signed with ES256, ES384 or ES512")
+        x5chain = header.get(_HEADER_X5CHAIN, unprotected.get(_HEADER_X5CHAIN))
+        return cls(_signer(x5chain, location), algorithm, protected, payload, signature)
+
+    def verify(self, location: str) -> None:
+        """Check the signature with the signer certificate's key.
+
+        Raises:
+            ConfigError: The signature does not verify.
+        """
+        _check_signature(
+            self.signer, self.algorithm, self.protected, self.payload, self.signature, location
+        )
 
 
 def _sign1_parts(data: bytes, location: str) -> tuple[bytes, Mapping[Any, Any], bytes, bytes]:
@@ -262,3 +296,93 @@ def _issuers(
             + (f" in {sorted(wanted_countries)}" if wanted_countries else "")
         )
     return anchors
+
+
+def describe_vical(data: bytes, trusted: x509.Certificate, location: str) -> tuple[bool, list[str]]:
+    """Describe a VICAL check by check, and list every issuer in it.
+
+    This repeats the checks ``load_vical`` makes and reports each one, so an operator
+    can look at a list before trusting it (``--check-vical``). Unlike ``load_vical`` it
+    filters nothing: every entry is listed, with its countries, doc types and dates.
+
+    Returns:
+        Whether the list would be trusted (signed by ``trusted`` or a VICAL signer it
+        issued, and not past its ``nextUpdate`` or ``notAfter``), and the report lines.
+    """
+    lines = [f"VICAL {location}"]
+    try:
+        message = _Signed.read(data, location)
+        signer = message.signer
+        lines.append(
+            f"  signer: {signer.subject.rfc4514_string()}, valid "
+            f"{signer.not_valid_before_utc.date()} to {signer.not_valid_after_utc.date()}, "
+            f"SHA-256 {signer.fingerprint(hashes.SHA256()).hex()}"
+        )
+        _check_signer(signer, trusted, location)
+        lines.append("  [ok] signer is the configured certificate, or a VICAL signer it issued")
+        message.verify(location)
+        lines.append("  [ok] signature verifies")
+        content = _decode_map(message.payload, "content", location)
+    except ConfigError as exc:
+        lines += [f"  [FAIL] {exc}", "NOT TRUSTED"]
+        return False, lines
+    lines.append(
+        f"  provider: {content.get('vicalProvider')}, issue {content.get('vicalIssueID')}, "
+        f"dated {content.get('date')}"
+    )
+    current = True
+    now = datetime.now(UTC)
+    if "nextUpdate" not in content:
+        lines.append("  [note] no nextUpdate: nothing says when to fetch a newer list")
+    for field in ("nextUpdate", "notAfter"):
+        if field not in content:
+            continue
+        try:
+            due = _instant(content[field], field, location)
+        except ConfigError as exc:
+            lines.append(f"  [FAIL] {exc}")
+            current = False
+            continue
+        if due <= now:
+            lines.append(f"  [FAIL] {field} {due.isoformat()} has passed")
+            current = False
+        else:
+            lines.append(f"  [ok] {field} {due.isoformat()}")
+    listed, issuers = _issuer_lines(content)
+    lines += issuers
+    current = current and listed
+    lines.append("TRUSTED" if current else "NOT TRUSTED")
+    return current, lines
+
+
+def _issuer_lines(content: Mapping[Any, Any]) -> tuple[bool, list[str]]:
+    """One line per listed issuer: country, authority, doc types, certificate and dates.
+
+    Returns:
+        Whether the list has a ``certificateInfos`` array, and the lines.
+    """
+    entries = content.get("certificateInfos")
+    if not isinstance(entries, (list, tuple)):
+        return False, ["  [FAIL] no certificateInfos list"]
+    lines = [f"  issuers: {len(entries)}"]
+    now = datetime.now(UTC)
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            lines.append("  - (not a map)")
+            continue
+        doc_types = entry.get("docType")
+        if isinstance(doc_types, (list, tuple)):
+            doc_types = ", ".join(str(doc_type) for doc_type in doc_types)
+        who = f"{entry.get('issuingCountry', '??')} {entry.get('issuingAuthority', '')}".rstrip()
+        label = f"  - {who}: {doc_types}"
+        try:
+            certificate = x509.load_der_x509_certificate(cast(bytes, entry.get("certificate")))
+        except (ValueError, TypeError):
+            lines.append(f"{label}; certificate unreadable")
+            continue
+        valid = certificate.not_valid_before_utc <= now <= certificate.not_valid_after_utc
+        lines.append(
+            f"{label}; {certificate.subject.rfc4514_string()}, valid to "
+            f"{certificate.not_valid_after_utc.date()}{'' if valid else ' (NOT VALID TODAY)'}"
+        )
+    return True, lines
