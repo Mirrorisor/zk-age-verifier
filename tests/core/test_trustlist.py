@@ -168,6 +168,18 @@ def test_expired_anchor_rejected() -> None:
         AnchorSet((expired,)).resolve(expired)
 
 
+def test_leaf_of_an_expired_anchor_rejected() -> None:
+    # The leaf itself is valid; only the root that issued it has expired.
+    root_key, leaf_key = (
+        ec.generate_private_key(ec.SECP256R1()),
+        ec.generate_private_key(ec.SECP256R1()),
+    )
+    root = _cert(root_key, "root", "root", root_key, ca=True, not_after=NOW - timedelta(hours=1))
+    leaf = _cert(leaf_key, "leaf", "root", root_key)
+    with pytest.raises(UntrustedIssuer):
+        AnchorSet((root,)).resolve(leaf)
+
+
 def test_non_p256_key_rejected() -> None:
     key = ec.generate_private_key(ec.SECP384R1())
     cert = _cert(

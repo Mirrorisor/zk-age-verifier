@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **BACKWARDS INCOMPATIBLE:** A trust anchor outside its own validity period no longer vouches for the certificates it issued, where only the presented certificate's dates were checked (#89).
 - **BACKWARDS INCOMPATIBLE:** An `etsi_xml` trust source now takes anchors only from services of type `http://trust.tech.ec.europa.eu/lists/age-verification/service-type/paa`, where it took them from services of every type (#88).
 - The `etsi_service_skipped` log line now includes the service type (#88).
 - An `etsi_xml` trust source now takes as anchors only the certificates in the `ServiceDigitalIdentity` of services with status `granted`, `recognisedatnationallevel` or `recognized`, where it took every certificate in the file (#78).
