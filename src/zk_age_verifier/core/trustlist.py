@@ -264,18 +264,14 @@ def _load_pem(location: str) -> list[x509.Certificate]:
 # (http://trust.tech.ec.europa.eu/lists/age-verification/service-status/recognized).
 _ACTIVE_SERVICE_STATUSES = frozenset({"granted", "recognisedatnationallevel", "recognized"})
 
-# The only service type whose certificates may vouch for an age credential: the EU Age
-# Verification Trusted List's proof-of-age attestation provider. A service of any other
-# type, or with no type, is skipped. https://github.com/pipe23-org/zk-age-verifier/issues/82
+# Service type of a proof-of-age attestation service on the EU Age Verification Trusted List.
 _AGE_ATTESTATION_SERVICE_TYPE = (
     "http://trust.tech.ec.europa.eu/lists/age-verification/service-type/paa"
 )
 
 
 def _load_etsi_xml(location: str) -> list[x509.Certificate]:
-    """Fetch and parse an ETSI list from a path or URL, extracting its service certificates.
-
-    Only services of the age-attestation type with an active status contribute anchors.
+    """Load the certificates of active age-attestation services from an ETSI list at a path or URL.
 
     The list's own signature is not verified. An operator who wants a fixed, reviewed
     list points ``etsi_xml`` at a local copy.

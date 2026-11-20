@@ -319,10 +319,7 @@ _AGE_ATTESTATION = "http://trust.tech.ec.europa.eu/lists/age-verification/servic
 def _service_xml(
     cert: x509.Certificate | None, status: str | None, service_type: str | None = _AGE_ATTESTATION
 ) -> str:
-    """One TSPService; ``cert=None`` gives an empty ``X509Certificate`` element.
-
-    ``status`` and ``service_type`` set to None leave those elements out.
-    """
+    """One TSPService; ``None`` gives an empty certificate, or omits the status or service type."""
     status_xml = f"<ServiceStatus>{_STATUS_BASE}{status}</ServiceStatus>" if status else ""
     type_xml = (
         f"<ServiceTypeIdentifier>{service_type}</ServiceTypeIdentifier>" if service_type else ""
@@ -353,7 +350,7 @@ def _etsi_xml(
 
     ``signer`` is placed where a list's own signature certificate goes, ``history``
     where a past service version's goes, and ``other`` is one more service with its
-    own status (and, optionally, its own service type).
+    own status and optional service type.
     """
     services = "".join(_service_xml(cert, status) for cert in certs)
     if empty_certificate:
@@ -444,10 +441,7 @@ def test_etsi_xml_skips_services_that_are_not_active(tmp_path: Path, status: str
 
 
 @pytest.mark.parametrize("service_type", ["http://uri.etsi.org/TrstSvc/Svctype/CA/QC", None])
-def test_services_that_are_not_age_attestation_providers_are_skipped(
-    tmp_path: Path, service_type: str | None
-) -> None:
-    # Only the EU age verification list's "paa" services may vouch for age (#82).
+def test_etsi_xml_skips_services_of_other_types(tmp_path: Path, service_type: str | None) -> None:
     provider, other = _self_signed("age attestation"), _self_signed("other type")
     listing = tmp_path / "tsl.xml"
     listing.write_bytes(_etsi_xml(provider, other=(other, "granted", service_type)))

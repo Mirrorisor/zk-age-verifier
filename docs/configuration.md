@@ -27,12 +27,13 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
 
 - `pem` — a PEM file, or a directory whose `*.pem` files are all loaded.
 - `etsi_xml` — an ETSI trusted list, path or URL. The certificates in the
-  `ServiceDigitalIdentity` of each active age-attestation service become anchors. The
-  service type must be
+  `ServiceDigitalIdentity` of each active age-attestation service become anchors. An
+  age-attestation service has the service type
   `http://trust.tech.ec.europa.eu/lists/age-verification/service-type/paa` (EU Age
   Verification Trusted List). Active statuses are `granted` and `recognisedatnationallevel`
   (ETSI TS 119 612) and `recognized` (EU Age Verification Trusted List). A service of any
-  other type or status is skipped and logged as `etsi_service_skipped`.
+  other type or status is skipped and logged as `etsi_service_skipped` with its service type
+  and status.
 
 Every listed anchor is authorized to vouch for age credentials. Sources that resolve to
 zero anchors fail startup.
