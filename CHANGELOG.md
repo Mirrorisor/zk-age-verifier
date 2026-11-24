@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-- An `etsi_xml` trust source takes an optional `etsi_xml_signers`: a PEM file or directory of the certificates authorised to sign the list. The list's XML signature must verify against one of them, and anchors are read only from the signed content. Without it, `etsi_xml_signature_not_checked` is logged (#91).
-- **BACKWARDS INCOMPATIBLE:** An `etsi_xml` list whose `NextUpdate` has passed is refused at startup; a list without a `NextUpdate` loads with an `etsi_xml_no_next_update` warning (#91).
-- New dependency: `signxml`, for the XML signature check (#91).
+- An `etsi_xml` trust source takes an optional `etsi_xml_signers`: a PEM file or directory of the certificates authorised to sign the list. The list's XML signature must verify against one of them, and anchors are read only from the signed content. Without it, `etsi_xml_signature_not_checked` is logged (#94).
+- **BACKWARDS INCOMPATIBLE:** An `etsi_xml` list whose `NextUpdate` has passed is refused at startup; a list without a `NextUpdate` loads with an `etsi_xml_no_next_update` warning (#94).
+- New dependency: `signxml`, for the XML signature check (#94).
 - **BACKWARDS INCOMPATIBLE:** A trust anchor outside its own validity period no longer vouches for the certificates it issued, where only the presented certificate's dates were checked (#92).
 - **BACKWARDS INCOMPATIBLE:** An `etsi_xml` trust source now takes anchors only from services of type `http://trust.tech.ec.europa.eu/lists/age-verification/service-type/paa`, where it took them from services of every type (#88).
 - The `etsi_service_skipped` log line now includes the service type (#88).
