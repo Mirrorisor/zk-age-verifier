@@ -12,7 +12,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-authors = [{ name = "Nathan Schepers" }]
+authors = [{ name = "Nathan Schepers", email = "nathan@pipe23.org" }]
 keywords = ["age-verification", "zero-knowledge", "mdoc", "eudi", "longfellow", "digital-credentials-api"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
