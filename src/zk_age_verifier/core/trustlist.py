@@ -365,11 +365,16 @@ def _load_pem(location: str) -> list[x509.Certificate]:
 # (http://trust.tech.ec.europa.eu/lists/age-verification/service-status/recognized).
 _ACTIVE_SERVICE_STATUSES = frozenset({"granted", "recognisedatnationallevel", "recognized"})
 
+# Service type of a proof-of-age attestation service on the EU Age Verification Trusted List.
+_AGE_ATTESTATION_SERVICE_TYPE = (
+    "http://trust.tech.ec.europa.eu/lists/age-verification/service-type/paa"
+)
+
 
 def _load_etsi_xml(
     location: str, pinned_sha256: str | None = None, signer: str | None = None
 ) -> list[x509.Certificate]:
-    """Fetch and parse an ETSI list from a path or URL, extracting its service certificates.
+    """Load the certificates of active age-attestation services from an ETSI list at a path or URL.
 
     Pin the file's SHA-256 with ``pinned_sha256`` to make sure it is the file the operator
     reviewed. Name the list's signer certificate with ``signer`` (a PEM file) to require a
@@ -434,9 +439,10 @@ def _service_anchors(root: ElementTree.Element) -> list[x509.Certificate]:
     for information in root.iter():
         if _local_name(information.tag) != "ServiceInformation":
             continue
-        status = _service_status(information)
-        if status not in _ACTIVE_SERVICE_STATUSES:
-            log.warning("etsi_service_skipped", status=status)
+        service_type = _service_field(information, "ServiceTypeIdentifier")
+        status = _service_field(information, "ServiceStatus").rsplit("/", 1)[-1]
+        if service_type != _AGE_ATTESTATION_SERVICE_TYPE or status not in _ACTIVE_SERVICE_STATUSES:
+            log.warning("etsi_service_skipped", service_type=service_type, status=status)
             continue
         for identity in information:
             if _local_name(identity.tag) != "ServiceDigitalIdentity":
@@ -672,11 +678,11 @@ def _load_vical(source: TrustSource) -> list[x509.Certificate]:
     )
 
 
-def _service_status(information: ElementTree.Element) -> str:
-    """Return the last path segment of a service's ``ServiceStatus`` URI, or ``""``."""
+def _service_field(information: ElementTree.Element, name: str) -> str:
+    """Return the text of a service's ``name`` child without whitespace, or ``""``."""
     for child in information:
-        if _local_name(child.tag) == "ServiceStatus":
-            return "".join((child.text or "").split()).rsplit("/", 1)[-1]
+        if _local_name(child.tag) == name:
+            return "".join((child.text or "").split())
     return ""
 
 

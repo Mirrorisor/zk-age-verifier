@@ -462,13 +462,21 @@ def _b64_der(cert: x509.Certificate) -> str:
 _STATUS_BASE = "http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/"
 
 
-def _service_xml(cert: x509.Certificate | None, status: str | None) -> str:
-    """One TSPService; ``cert=None`` gives an empty ``X509Certificate`` element."""
+_AGE_ATTESTATION = "http://trust.tech.ec.europa.eu/lists/age-verification/service-type/paa"
+
+
+def _service_xml(
+    cert: x509.Certificate | None, status: str | None, service_type: str | None = _AGE_ATTESTATION
+) -> str:
+    """One TSPService; ``None`` gives an empty certificate, or omits the status or service type."""
     status_xml = f"<ServiceStatus>{_STATUS_BASE}{status}</ServiceStatus>" if status else ""
+    type_xml = (
+        f"<ServiceTypeIdentifier>{service_type}</ServiceTypeIdentifier>" if service_type else ""
+    )
     certificate = f"\n{_b64_der(cert)}\n" if cert is not None else ""
     return (
         "<TSPService><ServiceInformation>"
-        "<ServiceTypeIdentifier>http://example.org/svc</ServiceTypeIdentifier>"
+        f"{type_xml}"
         f"{status_xml}"
         "<ServiceDigitalIdentity><DigitalId>"
         f"<X509Certificate>{certificate}</X509Certificate>"
@@ -483,15 +491,17 @@ def _etsi_xml(
     history: x509.Certificate | None = None,
     empty_certificate: bool = False,
     status: str | None = "granted",
-    other: tuple[x509.Certificate, str | None] | None = None,
+    other: tuple[x509.Certificate, str | None]
+    | tuple[x509.Certificate, str | None, str | None]
+    | None = None,
     next_update: str | None = None,
 ) -> bytes:
     """Build a minimal trusted list: one service per cert, plus optional decoys.
 
     ``signer`` is placed where a list's own signature certificate goes, ``history``
     where a past service version's goes, and ``other`` is one more service with its
-    own status. ``next_update`` is the inner XML of the list's ``NextUpdate`` element;
-    None leaves the element out.
+    own status and optional service type. ``next_update`` is the inner XML of the list's
+    ``NextUpdate`` element; None leaves the element out.
     """
     services = "".join(_service_xml(cert, status) for cert in certs)
     if empty_certificate:
@@ -584,6 +594,21 @@ def test_etsi_xml_skips_services_that_are_not_active(tmp_path: Path, status: str
         anchors.resolve(inactive)
     skipped = [entry for entry in logs if entry["event"] == "etsi_service_skipped"]
     assert [entry["status"] for entry in skipped] == [status or ""]
+
+
+@pytest.mark.parametrize("service_type", ["http://uri.etsi.org/TrstSvc/Svctype/CA/QC", None])
+def test_etsi_xml_skips_services_of_other_types(tmp_path: Path, service_type: str | None) -> None:
+    provider, other = _self_signed("age attestation"), _self_signed("other type")
+    listing = tmp_path / "tsl.xml"
+    listing.write_bytes(_etsi_xml(provider, other=(other, "granted", service_type)))
+    with capture_logs() as logs:
+        anchors = load_anchors([TrustSource(etsi_xml=str(listing))])
+    assert anchors.resolve(provider)
+    with pytest.raises(UntrustedIssuer):
+        anchors.resolve(other)
+    (skipped,) = [entry for entry in logs if entry["event"] == "etsi_service_skipped"]
+    assert skipped["service_type"] == (service_type or "")
+    assert skipped["status"] == "granted"
 
 
 def test_recognised_at_national_level_counts_as_active(tmp_path: Path) -> None:

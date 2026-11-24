@@ -25,6 +25,8 @@
 
 ## Unreleased
 
+- **BACKWARDS INCOMPATIBLE:** An `etsi_xml` trust source now takes anchors only from services of type `http://trust.tech.ec.europa.eu/lists/age-verification/service-type/paa`, where it took them from services of every type (#88).
+- The `etsi_service_skipped` log line now includes the service type (#88).
 - An `etsi_xml` trust source now takes as anchors only the certificates in the `ServiceDigitalIdentity` of services with status `granted`, `recognisedatnationallevel` or `recognized`, where it took every certificate in the file (#78).
 
 ## 0.5.0 - 2026-11-15

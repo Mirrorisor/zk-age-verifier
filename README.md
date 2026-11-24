@@ -124,11 +124,15 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
 or `vical`:
 
 - `pem` — a PEM file, or a directory whose `*.pem` files are all loaded.
-- `etsi_xml` — an ETSI trusted list, path or URL; the certificates listed in each service's
-  `ServiceDigitalIdentity` become anchors, but only for services whose status is `granted`
-  or `recognisedatnationallevel` (ETSI TS 119 612) or `recognized` (EU Age Verification
-  Trusted List); others are skipped, with a log line. The signer's
-  certificate and the certificates of past service versions are not anchors. Protect the
+- `etsi_xml` — an ETSI trusted list, path or URL. The certificates in the
+  `ServiceDigitalIdentity` of each active age-attestation service become anchors. An
+  age-attestation service has the service type
+  `http://trust.tech.ec.europa.eu/lists/age-verification/service-type/paa` (EU Age
+  Verification Trusted List). Active statuses are `granted` and `recognisedatnationallevel`
+  (ETSI TS 119 612) and `recognized` (EU Age Verification Trusted List). A service of any
+  other type or status is skipped and logged as `etsi_service_skipped` with its service type
+  and status. The signer's certificate and the certificates of past service versions are not
+  anchors. Protect the
   list in either or both of two ways:
   - `etsi_xml_signer` — a PEM file holding the certificate that signs the list. The list's
     XML signature must then verify against exactly that certificate, and the anchors are read
@@ -150,7 +154,8 @@ or `vical`:
 
   Each chosen national list is fetched (over https only) from the address in the signed
   pointer, and its signature must verify against one of the certificates in that same
-  pointer. Its services become anchors under the same status rules as `etsi_xml`. If any
+  pointer. Its services become anchors under the same type and status rules as `etsi_xml`, so
+  only age-attestation services count (national eIDAS lists do not list such services today). If any
   chosen list is missing, unsigned, wrongly signed or past its `NextUpdate`, startup stops;
   nothing is loaded in part.
 - `vical` — a VICAL (path or URL): the signed CBOR list of issuer root certificates (IACAs)
