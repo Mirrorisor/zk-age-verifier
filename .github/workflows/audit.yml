@@ -3,11 +3,11 @@ name: Audit
 # Fork only: known vulnerabilities in what the service actually runs. The locked runtime
 # dependencies are checked with pip-audit, and the built image (operating-system packages
 # and anything else installed in it) with Trivy. Weekly, so a new advisory for a pinned
-# package shows up without a push. Fixes go through docs in age-gate's VERIFIER-MAINTENANCE.md.
+# package shows up without a push. The steps for a finding are in age-gate's docs/VERIFIER-MAINTENANCE.md.
 
 on:
   push:
-    branches: [main, audit]
+    branches: [main]
   pull_request:
   schedule:
     - cron: "41 6 * * 1"
@@ -35,11 +35,9 @@ jobs:
       - uses: actions/checkout@v7
       - name: Build the image
         run: docker build --quiet --tag local/verifier .
+      # Trivy pinned by digest (2026-11-19); its vulnerability database is fetched fresh.
       - name: Scan the image (fails on a fixable high or critical finding)
         run: >
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
-          aquasec/trivy:latest image --quiet --scanners vuln --severity HIGH,CRITICAL
+          aquasec/trivy@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb image --quiet --scanners vuln --severity HIGH,CRITICAL
           --ignore-unfixed --exit-code 1 local/verifier
-      - name: Trivy image digest
-        if: always()
-        run: docker inspect --format '{{index .RepoDigests 0}}' aquasec/trivy:latest
