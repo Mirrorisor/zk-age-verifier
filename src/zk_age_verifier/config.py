@@ -97,10 +97,13 @@ class TrustSource(BaseModel):
 
     pem: str | None = None
     etsi_xml: str | None = None
+    etsi_xml_signers: str | None = None
 
     @model_validator(mode="after")
     def _validate_single_source(self) -> "TrustSource":
-        """Reject entries that set zero or several source keys."""
+        """Reject entries that set zero or several source keys, or signers without a list."""
+        if self.etsi_xml_signers is not None and self.etsi_xml is None:
+            raise ValueError("etsi_xml_signers can only be used together with etsi_xml")
         set_keys = [
             key
             for key, value in (("pem", self.pem), ("etsi_xml", self.etsi_xml))

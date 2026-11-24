@@ -7,9 +7,10 @@ key coordinates are returned, the only value the trust layer feeds the proof
 check. The credential's own issuer signature is validated inside the ZK proof.
 This module only decides which issuer key the proof is allowed to satisfy.
 
-ETSI list handling extracts certificates from the XML and stops there: TSL
-semantics and XAdES signature validation are out of scope, so an ETSI source is
-trusted by its pinned path or URL, not by a checked list signature.
+An ETSI list is refused once its NextUpdate has passed. Its XML signature is checked
+when the source names the certificates authorised to sign it (``etsi_xml_signers``);
+the anchors are then read only from the signed content. Without them, an ETSI source is
+trusted by its path or URL alone, and a warning says so.
 """
 
 import base64
@@ -26,6 +27,9 @@ from cryptography import x509
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
+from lxml.etree import LxmlError
+from signxml.exceptions import SignXMLException
+from signxml.verifier import SignatureConfiguration, XMLVerifier
 
 from zk_age_verifier.config import ConfigError, TrustSource
 
@@ -243,7 +247,7 @@ def load_anchors(sources: list[TrustSource]) -> AnchorSet:
         if source.pem is not None:
             anchors.extend(_load_pem(source.pem))
         else:
-            anchors.extend(_load_etsi_xml(cast(str, source.etsi_xml)))
+            anchors.extend(_load_etsi_xml(cast(str, source.etsi_xml), source.etsi_xml_signers))
     if not anchors:
         raise ConfigError("trust sources resolved to no anchors; check the [trust] source paths")
     return AnchorSet(tuple(anchors))
@@ -273,16 +277,20 @@ _AGE_ATTESTATION_SERVICE_TYPE = (
 )
 
 
-def _load_etsi_xml(location: str) -> list[x509.Certificate]:
+def _load_etsi_xml(location: str, signers: str | None = None) -> list[x509.Certificate]:
     """Load the certificates of active age-attestation services from an ETSI list at a path or URL.
 
-    The list's own signature is not verified. An operator who wants a fixed, reviewed
-    list points ``etsi_xml`` at a local copy.
+    With ``signers`` (a PEM file or a directory of ``*.pem`` files), the list's XML signature
+    must verify against one of those certificates, and the anchors are read from the signed
+    content only. Without it the signature is not checked and ``etsi_xml_signature_not_checked``
+    is logged. Either way a list whose ``NextUpdate`` has passed is refused.
 
     Raises:
         ConfigError: The location is an ``http`` URL. A trust list fetched
             over plain http can be replaced in transit, so only ``https``
-            URLs and local file paths are accepted.
+            URLs and local file paths are accepted. Also raised when the signer
+            certificates cannot be read, the signature does not verify against any
+            of them, or the list is past its ``NextUpdate``.
     """
     scheme = urlsplit(location).scheme
     if scheme == "http":
@@ -294,7 +302,12 @@ def _load_etsi_xml(location: str) -> list[x509.Certificate]:
             data = response.read()
     else:
         data = Path(location).read_bytes()
-    root = ElementTree.fromstring(data)
+    if signers is None:
+        log.warning("etsi_xml_signature_not_checked", location=location)
+        root = ElementTree.fromstring(data)
+    else:
+        root = _verified_list(data, _read_signers(signers), location)
+    _check_next_update(root, location)
     anchors: list[x509.Certificate] = []
     # Only the certificates a service is listed under are anchors. The list's
     # own signer certificate (in ds:Signature) and the certificates of past
@@ -316,6 +329,121 @@ def _load_etsi_xml(location: str) -> list[x509.Certificate]:
                     der = base64.b64decode("".join(element.text.split()))
                     anchors.append(x509.load_der_x509_certificate(der))
     return anchors
+
+
+# A list's signature references its whole content, and XAdES adds one for the signing
+# properties. More than a handful is not a real list.
+_MAX_SIGNATURE_REFERENCES = 5
+_LIST_ROOT = "TrustServiceStatusList"
+
+
+def _read_signers(location: str) -> list[x509.Certificate]:
+    """Read the certificates authorised to sign a list, from a PEM file or directory.
+
+    Raises:
+        ConfigError: The file or directory cannot be read, or holds no PEM certificate.
+    """
+    try:
+        signers = _load_pem(location)
+    except (OSError, ValueError) as exc:
+        raise ConfigError(f"cannot read list signer certificates {location}: {exc}") from exc
+    if not signers:
+        raise ConfigError(f"list signer certificates {location} hold no certificate")
+    return signers
+
+
+def _children(element: ElementTree.Element, name: str) -> list[ElementTree.Element]:
+    """Return an element's direct children with this local name."""
+    return [child for child in element if _local_name(child.tag) == name]
+
+
+def _signature_reference_count(data: bytes, location: str) -> int:
+    """Count the references in the list's own ``SignedInfo``.
+
+    The count only tells the verifier how many references to insist on; every one of them
+    must verify, so a list cannot gain trust by adding or hiding references.
+
+    Raises:
+        ConfigError: The signature carries more references than a real list does.
+    """
+    signatures = _children(ElementTree.fromstring(data), "Signature")
+    signed_infos = _children(signatures[0], "SignedInfo") if signatures else []
+    count = len(_children(signed_infos[0], "Reference")) if signed_infos else 1
+    if count > _MAX_SIGNATURE_REFERENCES:
+        raise ConfigError(f"trust list {location} signature has {count} references; refusing")
+    return max(count, 1)
+
+
+def _verified_list(
+    data: bytes, signers: list[x509.Certificate], location: str
+) -> ElementTree.Element:
+    """Return the list element that a valid signature from one of ``signers`` covers.
+
+    The anchors are read from the signed bytes the verifier returns, not from the
+    downloaded file, so unsigned content added around a valid signature is never read.
+
+    Raises:
+        ConfigError: The signature does not verify against any of ``signers``, or no
+            verified reference covers the whole list.
+    """
+    failure: Exception | None = None
+    for signer in signers:
+        try:
+            references = _signature_reference_count(data, location)
+            verified = XMLVerifier().verify(
+                data,
+                x509_cert=signer,
+                expect_config=SignatureConfiguration(location="./", expect_references=references),
+            )
+            for result in verified if isinstance(verified, list) else [verified]:
+                root = ElementTree.fromstring(result.signed_data)
+                if _local_name(root.tag) == _LIST_ROOT:
+                    log.info(
+                        "etsi_xml_signature_verified",
+                        location=location,
+                        signer_sha256=signer.fingerprint(hashes.SHA256()).hex(),
+                    )
+                    return root
+        except (SignXMLException, LxmlError, SyntaxError) as exc:
+            failure = exc
+            continue
+        raise ConfigError(
+            f"trust list {location} is signed, but no signed part covers the whole list"
+        )
+    raise ConfigError(f"trust list {location} failed its signature check: {failure}") from failure
+
+
+def _check_next_update(root: ElementTree.Element, location: str) -> None:
+    """Refuse a list whose own ``NextUpdate`` time has passed.
+
+    A list states when its next issue is due; after that moment it is stale, and a stale
+    list may be an old copy replayed by someone who wants a withdrawn service trusted
+    again. A list without a usable ``NextUpdate`` is accepted with a warning, because
+    lists that are not meant to be updated leave it empty.
+
+    Raises:
+        ConfigError: The ``NextUpdate`` is not a date and time, or is in the past.
+    """
+    for element in root.iter():
+        if _local_name(element.tag) != "NextUpdate":
+            continue
+        stamp = "".join("".join(element.itertext()).split())
+        if not stamp:
+            break
+        try:
+            due = datetime.fromisoformat(stamp)
+        except ValueError as exc:
+            raise ConfigError(
+                f"trust list {location} has a NextUpdate that is not a date and time: {stamp!r}"
+            ) from exc
+        if due.tzinfo is None:
+            due = due.replace(tzinfo=UTC)
+        if due <= datetime.now(UTC):
+            raise ConfigError(
+                f"trust list {location} expired: its NextUpdate was {stamp}; fetch a current list"
+            )
+        return
+    log.warning("etsi_xml_no_next_update", location=location)
 
 
 def _service_field(information: ElementTree.Element, name: str) -> str:

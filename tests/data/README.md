@@ -64,3 +64,11 @@ Bytes the tests read but did not produce.
   `PointersToOtherTSL`, and one in the list's `Signature`. Captured 2026-11-15. Copied
   verbatim. SHA-256 `50efeb9b05fc68d4fc7e7797851a8a9ac480f2992b22b2a77e2134454019de69`. Same
   copyright and licence as the production list.
+- `av-tl-production-2026-11-15-signers.pem` — the six certificates under `PointersToOtherTSL`
+  in `av-tl-production-2026-11-15.xml`, the list's signer among them (SHA-256
+  `e0a620fbb6747362bb933ac44169d676a553444716cf5f31605f12a22b8396b1`). Extracted from that file
+  and written as PEM, in document order. Same copyright and licence as the list.
+- `av-tl-acceptance-2026-11-15-signer.pem` — the certificate in the `Signature` of
+  `av-tl-acceptance-2026-11-15.xml`, "TEST European Commission" (SHA-256
+  `0ccf87a5abf4db89bde4e10202e2523296bea7d835ba6a5a41054b9e1e6b8949`). It is not one of that
+  list's seven `PointersToOtherTSL` certificates. Extracted from that file and written as PEM.

@@ -202,6 +202,10 @@ class _ClockAt:
     def now(self, tz: tzinfo) -> datetime:
         return self._instant.astimezone(tz)
 
+    @staticmethod
+    def fromisoformat(text: str) -> datetime:
+        return datetime.fromisoformat(text)
+
 
 def test_real_document_signer_resolves_through_real_anchor(
     monkeypatch: pytest.MonkeyPatch,
@@ -356,12 +360,14 @@ def _etsi_xml(
     other: tuple[x509.Certificate, str | None]
     | tuple[x509.Certificate, str | None, str | None]
     | None = None,
+    next_update: str | None = None,
 ) -> bytes:
     """Build a minimal trusted list: one service per cert, plus optional decoys.
 
     ``signer`` is placed where a list's own signature certificate goes, ``history``
     where a past service version's goes, and ``other`` is one more service with its
-    own status and optional service type.
+    own status and optional service type. ``next_update`` is the inner XML of the list's
+    ``NextUpdate`` element; None leaves the element out.
     """
     services = "".join(_service_xml(cert, status) for cert in certs)
     if empty_certificate:
@@ -383,9 +389,14 @@ def _etsi_xml(
             f"<ds:X509Certificate>{_b64_der(signer)}</ds:X509Certificate>"
             "</ds:X509Data></ds:KeyInfo></ds:Signature>"
         )
+    scheme = (
+        f"<SchemeInformation><NextUpdate>{next_update}</NextUpdate></SchemeInformation>"
+        if next_update is not None
+        else ""
+    )
     return (
         '<TrustServiceStatusList xmlns="http://uri.etsi.org/02231/v2#">'
-        f"<TrustServiceProviderList><TrustServiceProvider><TSPServices>{services}"
+        f"{scheme}<TrustServiceProviderList><TrustServiceProvider><TSPServices>{services}"
         f"</TSPServices></TrustServiceProvider></TrustServiceProviderList>{signature}"
         "</TrustServiceStatusList>"
     ).encode("ascii")
@@ -493,23 +504,27 @@ def test_etsi_xml_http_url_rejected() -> None:
         load_anchors([TrustSource(etsi_xml="http://tsl.example.org/list.xml")])
 
 
+@pytest.mark.usefixtures("capture_day")
 def test_production_recognized_service_loaded() -> None:
     anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_PRODUCTION_XML))])
     loaded = {anchor.fingerprint(hashes.SHA256()).hex() for anchor in anchors.anchors}
     assert loaded == set(AV_TL_PRODUCTION_RECOGNIZED)
 
 
+@pytest.mark.usefixtures("capture_day")
 def test_acceptance_recognized_services_loaded() -> None:
     anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_ACCEPTANCE_XML))])
     assert len(anchors.anchors) == AV_TL_ACCEPTANCE_RECOGNIZED_COUNT
 
 
+@pytest.mark.usefixtures("capture_day")
 def test_acceptance_deprecated_service_absent() -> None:
     anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_ACCEPTANCE_XML))])
     loaded = {anchor.fingerprint(hashes.SHA256()).hex() for anchor in anchors.anchors}
     assert AV_TL_ACCEPTANCE_DEPRECATED not in loaded
 
 
+@pytest.mark.usefixtures("capture_day")
 def test_acceptance_list_signer_absent() -> None:
     anchors = load_anchors([TrustSource(etsi_xml=str(AV_TL_ACCEPTANCE_XML))])
     loaded = {anchor.fingerprint(hashes.SHA256()).hex() for anchor in anchors.anchors}

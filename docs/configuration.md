@@ -33,7 +33,17 @@ The verifier reads a TOML file with two tables, `[service]` and `[trust]`, passe
   Verification Trusted List). Active statuses are `granted` and `recognisedatnationallevel`
   (ETSI TS 119 612) and `recognized` (EU Age Verification Trusted List). A service of any
   other type or status is skipped and logged as `etsi_service_skipped` with its service type
-  and status.
+  and status. A list whose `NextUpdate` has passed is refused; one without a `NextUpdate`
+  loads with an `etsi_xml_no_next_update` warning.
+  - `etsi_xml_signers` (optional) — a PEM file, or a directory of `*.pem` files, holding
+    the certificates authorised to sign the list. The list's XML signature must then verify
+    against one of them, and anchors are read only from the signed content; otherwise
+    startup stops. For the EU Age Verification Trusted List these are the EU/EEA list of
+    trusted lists (LOTL) signing certificates, which the list also names in its
+    `PointersToOtherTSL`. Get them from a source you trust rather than from the list itself.
+    The acceptance (test) list is signed by a certificate outside that set, so a deployment
+    that tests against it names that certificate. Without `etsi_xml_signers` the signature
+    is not checked and `etsi_xml_signature_not_checked` is logged.
 
 Every listed anchor is authorized to vouch for age credentials. Sources that resolve to
 zero anchors fail startup.
