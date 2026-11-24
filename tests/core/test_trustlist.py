@@ -169,7 +169,6 @@ def test_expired_anchor_rejected() -> None:
 
 
 def test_leaf_of_an_expired_anchor_rejected() -> None:
-    # The leaf itself is valid; only the root that issued it has expired.
     root_key, leaf_key = (
         ec.generate_private_key(ec.SECP256R1()),
         ec.generate_private_key(ec.SECP256R1()),
