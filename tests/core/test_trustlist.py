@@ -233,6 +233,19 @@ def test_explain_reports_an_anchor_that_may_not_sign() -> None:
     assert "signed this certificate; keyCertSign NOT asserted" in text
 
 
+def test_explain_agrees_with_resolve_for_a_leaf_of_an_expired_anchor() -> None:
+    root_key, leaf_key = (
+        ec.generate_private_key(ec.SECP256R1()),
+        ec.generate_private_key(ec.SECP256R1()),
+    )
+    root = _cert(root_key, "root", "root", root_key, ca=True, not_after=NOW - timedelta(hours=1))
+    leaf = _cert(leaf_key, "leaf", "root", root_key)
+    accepted, lines = explain_certificate(AnchorSet((root,)), leaf)
+    assert not accepted
+    assert any("NOT valid today, so it vouches for nothing" in line for line in lines)
+    assert lines[-1] == "verdict: NOT TRUSTED"
+
+
 def test_explain_reports_a_key_that_is_not_p256() -> None:
     key = ec.generate_private_key(ec.SECP384R1())
     usage = _key_usage(digital_signature=True, key_cert_sign=True)
@@ -310,6 +323,17 @@ def test_expired_anchor_rejected() -> None:
     expired = _self_signed(not_after=NOW - timedelta(days=1))
     with pytest.raises(UntrustedIssuer):
         AnchorSet((expired,)).resolve(expired)
+
+
+def test_leaf_of_an_expired_anchor_rejected() -> None:
+    root_key, leaf_key = (
+        ec.generate_private_key(ec.SECP256R1()),
+        ec.generate_private_key(ec.SECP256R1()),
+    )
+    root = _cert(root_key, "root", "root", root_key, ca=True, not_after=NOW - timedelta(hours=1))
+    leaf = _cert(leaf_key, "leaf", "root", root_key)
+    with pytest.raises(UntrustedIssuer):
+        AnchorSet((root,)).resolve(leaf)
 
 
 def test_non_p256_key_rejected() -> None:

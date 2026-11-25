@@ -58,7 +58,8 @@ class AnchorSet:
 
         The certificate is accepted if it is itself an anchor (SHA-256
         fingerprint match) or was directly issued by one, and is within its own
-        validity window in either case. A presented certificate must carry a
+        validity window in either case. An anchor accepted as the issuer must be
+        within its validity window too. A presented certificate must carry a
         keyUsage extension asserting digitalSignature; an anchor accepted as the
         issuer of a chained leaf must assert keyCertSign.
 
@@ -96,6 +97,8 @@ class AnchorSet:
         if any(fingerprint == anchor.fingerprint(hashes.SHA256()) for anchor in self.anchors):
             return True
         for anchor in self.anchors:
+            if not (anchor.not_valid_before_utc <= now <= anchor.not_valid_after_utc):
+                continue
             if not _key_usage_permits(anchor, "key_cert_sign"):
                 continue
             try:
@@ -146,15 +149,17 @@ def explain_certificate(anchors: AnchorSet, cert: x509.Certificate) -> tuple[boo
     issued = False
     for anchor in anchors.anchors:
         can_sign = _key_usage_permits(anchor, "key_cert_sign")
+        current = anchor.not_valid_before_utc <= now <= anchor.not_valid_after_utc
         try:
             cert.verify_directly_issued_by(anchor)
             verdict = "signed this certificate"
-            issued = issued or can_sign
+            issued = issued or (can_sign and current)
         except (ValueError, TypeError, InvalidSignature) as exc:
             verdict = "did not sign it (" + (str(exc) or type(exc).__name__) + ")"
         lines.append(
             f"  - {anchor.subject.rfc4514_string()}: {verdict}; "
             + ("may sign certificates" if can_sign else "keyCertSign NOT asserted")
+            + ("" if current else "; NOT valid today, so it vouches for nothing")
         )
     accepted = in_window and signs and p256 and (is_anchor or issued)
     lines.append("verdict: " + ("TRUSTED" if accepted else "NOT TRUSTED"))
